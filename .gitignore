@@ -1,0 +1,32 @@
+# Node modules
+node_modules/
+*/node_modules/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+*/.env
+*/.env.*
+!*/.env.example
+
+# Uploaded student & attendance photos
+uploads/
+server/uploads/
+*.jpg
+*.jpeg
+*.png
+*.webp
+!mobile/assets/**
+
+# Expo & build artifacts
+.expo/
+mobile/.expo/
+dist/
+web-build/
+*.log
+npm-debug.*
+
+# OS generated files
+.DS_Store
+Thumbs.db
