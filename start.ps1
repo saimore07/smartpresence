@@ -10,6 +10,10 @@
     5. Performs health checks and displays active URLs and status.
 #>
 
+param(
+    [switch]$Tunnel
+)
+
 $ErrorActionPreference = "Continue"
 
 Write-Host ""
@@ -19,6 +23,12 @@ Write-Host "===============================================================" -Fo
 Write-Host ""
 
 $ROOT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+# Detect Primary IPv4 LAN IP (ignore loopback and 169.254 link-local)
+$lanIp = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notlike "*Loopback*" -and $_.IPAddress -notlike "169.254*" } | Select-Object -First 1).IPAddress
+if (-not $lanIp) {
+    $lanIp = "127.0.0.1"
+}
 
 # --- 1. CHECK MONGODB ---
 Write-Host "[1/4] Checking MongoDB Service..." -ForegroundColor Yellow
@@ -76,15 +86,21 @@ Write-Host "   Waiting for backend services to initialize..." -ForegroundColor D
 Start-Sleep -Seconds 4
 
 # --- 4. START EXPO MOBILE APP ---
-Write-Host "[4/4] Starting Expo Metro Bundler..." -ForegroundColor Yellow
+$tunnelArg = if ($Tunnel) { "--tunnel" } else { "" }
+$modeLabel = if ($Tunnel) { "TUNNEL MODE (Worldwide / Any Network)" } else { "LAN MODE ($lanIp)" }
+
+Write-Host "[4/4] Starting Expo Metro Bundler in $modeLabel..." -ForegroundColor Yellow
 $mobileDir = Join-Path $ROOT_DIR "mobile"
 $mobileCmd = @"
 `$host.UI.RawUI.WindowTitle = 'SmartPresence: Expo Metro Bundler (Mobile)'
 cd '$mobileDir'
+`$env:REACT_NATIVE_PACKAGER_HOSTNAME = '$lanIp'
+`$env:EXPO_PUBLIC_BACKEND_IP = '$lanIp'
 Write-Host '===================================================' -ForegroundColor Magenta
 Write-Host '     SMARTPRESENCE EXPO MOBILE BUNDLER             ' -ForegroundColor Yellow
+Write-Host '     Mode: $modeLabel                              ' -ForegroundColor Cyan
 Write-Host '===================================================' -ForegroundColor Magenta
-npx expo start -c
+npx expo start $tunnelArg -c
 "@
 
 Start-Process powershell -ArgumentList "-NoExit", "-Command", $mobileCmd
@@ -120,14 +136,18 @@ try {
 }
 
 # Network IP info
-$lanIp = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notlike "*Loopback*" -and $_.IPAddress -notlike "169.254*" } | Select-Object -First 1).IPAddress
-if ($lanIp) {
-    Write-Host "   [INFO] Local LAN IP:    $lanIp" -ForegroundColor Cyan
-}
+Write-Host "   [INFO] Local LAN IP:    $lanIp" -ForegroundColor Cyan
 
 Write-Host ""
 Write-Host "All 3 services have been launched in separate terminal windows." -ForegroundColor Green
 Write-Host "To access on Android: scan the QR code in the Expo window with Expo Go." -ForegroundColor White
+Write-Host ""
+Write-Host "TROUBLESHOOTING TIP:" -ForegroundColor Yellow
+Write-Host "If Expo Go shows 'Failed to download remote update':" -ForegroundColor DarkYellow
+Write-Host " 1. Make sure your phone is connected to the SAME Wi-Fi ($lanIp) and Mobile Data is OFF." -ForegroundColor Gray
+Write-Host " 2. If your Wi-Fi has AP isolation or is a college/public network, run with Tunnel:" -ForegroundColor Gray
+Write-Host "    .\start.ps1 -Tunnel" -ForegroundColor Cyan
+Write-Host ""
 Write-Host "To shut down all services later: run .\stop.ps1" -ForegroundColor DarkGray
 Write-Host "===============================================================" -ForegroundColor Cyan
 Write-Host ""

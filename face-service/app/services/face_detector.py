@@ -1,4 +1,5 @@
 import os
+import threading
 import cv2
 import numpy as np
 from typing import List, Dict, Any, Tuple
@@ -13,6 +14,7 @@ class FaceDetectorService:
         if not os.path.exists(self.model_path):
             raise FileNotFoundError(f"YuNet model not found at {self.model_path}")
         
+        self._lock = threading.Lock()
         # Initial dummy input size, updated dynamically per image
         self.detector = cv2.FaceDetectorYN.create(
             model=self.model_path,
@@ -40,9 +42,10 @@ class FaceDetectorService:
         - crop: cropped BGR face matrix
         """
         h, w = image.shape[:2]
-        self.detector.setInputSize((w, h))
+        with self._lock:
+            self.detector.setInputSize((w, h))
+            _, faces = self.detector.detect(image)
 
-        _, faces = self.detector.detect(image)
         if faces is None or len(faces) == 0:
             return []
 

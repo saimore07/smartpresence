@@ -10,6 +10,7 @@ const {
   updateStudent,
   deleteStudent,
   deleteFaceTemplate,
+  portalStudentLookup,
 } = require('../controllers/student.controller');
 const authMiddleware = require('../middleware/auth.middleware');
 
@@ -39,7 +40,11 @@ const upload = multer({
   },
 });
 
-// All routes require authentication
+// Public Student Portal routes (unauthenticated)
+router.get('/portal/lookup', portalStudentLookup);
+router.get('/portal/:id', getStudentById);
+
+// All faculty administrative routes require authentication
 router.use(authMiddleware);
 
 router.post('/', upload.single('faceImage'), createStudent);

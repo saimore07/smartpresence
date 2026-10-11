@@ -46,6 +46,11 @@ const attendanceSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Date is required'],
   },
+  sessionSlot: {
+    type: String,
+    default: 'regular',
+    trim: true,
+  },
   capturedImageUrl: {
     type: String,
     default: '',
@@ -61,8 +66,8 @@ const attendanceSchema = new mongoose.Schema({
   },
 });
 
-// Prevent duplicate attendance for class + subject + date
-attendanceSchema.index({ className: 1, subject: 1, date: 1 }, { unique: true });
+// Prevent duplicate attendance for class + subject + date + sessionSlot
+attendanceSchema.index({ className: 1, subject: 1, date: 1, sessionSlot: 1 }, { unique: true });
 // Optimize date queries and dashboard statistics
 attendanceSchema.index({ date: 1 });
 // Optimize student attendance lookup

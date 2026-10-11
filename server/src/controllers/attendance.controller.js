@@ -157,7 +157,7 @@ const recognizeSession = async (req, res, next) => {
 // Finalizes confirmed attendance roster in MongoDB
 const createAttendance = async (req, res, next) => {
   try {
-    let { className, subject, date, students, capturedImageUrls, capturedImageUrl } = req.body;
+    let { className, subject, date, sessionSlot = 'regular', students, capturedImageUrls, capturedImageUrl } = req.body;
 
     if (typeof students === 'string') {
       try {
@@ -189,8 +189,9 @@ const createAttendance = async (req, res, next) => {
       });
     }
 
-    // Check for duplicate attendance for this class + subject + date
-    const existing = await Attendance.findOne({ className, subject, date });
+    // Check for duplicate attendance for this class + subject + date + sessionSlot
+    const activeSlot = (sessionSlot && sessionSlot.trim()) || 'regular';
+    const existing = await Attendance.findOne({ className, subject, date, sessionSlot: activeSlot });
     if (existing) {
       return res.status(409).json({
         success: false,
@@ -218,6 +219,7 @@ const createAttendance = async (req, res, next) => {
       className,
       subject,
       date,
+      sessionSlot: activeSlot,
       capturedImageUrl: primaryImageUrl,
       capturedImageUrls: allImageUrls,
       students: students.map((s) => ({

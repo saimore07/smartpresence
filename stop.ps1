@@ -9,23 +9,43 @@ Write-Host "           SMARTPRESENCE - SYSTEM SHUTDOWN                     " -Fo
 Write-Host "===============================================================" -ForegroundColor Cyan
 Write-Host ""
 
-# Kill node processes running in SmartPresence directories
-Write-Host "Stopping Node.js / Expo / Express processes..." -ForegroundColor Yellow
-Get-Process -Name node -ErrorAction SilentlyContinue | ForEach-Object {
+# Find and stop processes bound to SmartPresence ports (Express: 5000, AI: 8000, Metro: 8081)
+Write-Host "Identifying SmartPresence processes on ports 5000, 8000, and 8081..." -ForegroundColor Yellow
+$targetPorts = @(5000, 8000, 8081)
+$stoppedPids = @{}
+
+foreach ($port in $targetPorts) {
     try {
-        Stop-Process -Id $_.Id -Force
-        Write-Host "   Stopped node process (PID: $($_.Id))" -ForegroundColor Gray
+        $connections = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
+        foreach ($conn in $connections) {
+            $pidToStop = $conn.OwningProcess
+            if ($pidToStop -and -not $stoppedPids.ContainsKey($pidToStop) -and $pidToStop -ne $PID) {
+                try {
+                    $p = Get-Process -Id $pidToStop -ErrorAction SilentlyContinue
+                    if ($p) {
+                        Stop-Process -Id $pidToStop -Force
+                        $stoppedPids[$pidToStop] = $true
+                        Write-Host "   Stopped $($p.ProcessName) on port $port (PID: $pidToStop)" -ForegroundColor Green
+                    }
+                } catch {}
+            }
+        }
     } catch {}
 }
 
-# Kill python / uvicorn processes
-Write-Host "Stopping Python AI Face Service processes..." -ForegroundColor Yellow
-Get-Process -Name python -ErrorAction SilentlyContinue | ForEach-Object {
-    try {
-        Stop-Process -Id $_.Id -Force
-        Write-Host "   Stopped python process (PID: $($_.Id))" -ForegroundColor Gray
-    } catch {}
-}
+# Also stop any PowerShell launcher windows or processes specifically running SmartPresence paths
+try {
+    $spProcesses = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+        ($_.CommandLine -like "*SmartPresence*" -or $_.CommandLine -like "*uvicorn app.main:app*") -and
+        $_.ProcessId -ne $PID -and -not $stoppedPids.ContainsKey($_.ProcessId)
+    }
+    foreach ($proc in $spProcesses) {
+        try {
+            Stop-Process -Id $proc.ProcessId -Force
+            Write-Host "   Stopped SmartPresence background process (PID: $($proc.ProcessId))" -ForegroundColor Gray
+        } catch {}
+    }
+} catch {}
 
 Write-Host ""
 Write-Host "All SmartPresence services have been stopped." -ForegroundColor Green

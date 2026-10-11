@@ -19,8 +19,8 @@ class Settings(BaseSettings):
     MODEL_IDENTIFIER: str = "opencv_yunet_sface_v1"
     
     # Recognition thresholds
-    ACCEPTANCE_THRESHOLD: float = 0.52
-    REJECTION_THRESHOLD: float = 0.36
+    ACCEPTANCE_THRESHOLD: float = 0.45
+    REJECTION_THRESHOLD: float = 0.34
     
     # Detection thresholds
     DETECTION_SCORE_THRESHOLD: float = 0.65

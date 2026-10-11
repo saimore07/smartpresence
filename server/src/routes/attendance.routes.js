@@ -38,12 +38,14 @@ const upload = multer({
   },
 });
 
-// All routes require authentication
+// Public student attendance check (unauthenticated)
+router.get('/student/:studentId', getStudentAttendance);
+
+// All faculty administrative routes require authentication
 router.use(authMiddleware);
 
 // Stats must come before :id to avoid route conflict
 router.get('/stats', getAttendanceStats);
-router.get('/student/:studentId', getStudentAttendance);
 
 // Recognition analysis for multiple row photographs
 router.post('/recognize-session', upload.array('classroomImages', 8), recognizeSession);

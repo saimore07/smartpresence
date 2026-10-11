@@ -124,7 +124,7 @@ class MatchingService:
                     "occurrences": len(matches)
                 })
 
-            # Mark duplicates among the detected items
+            # Mark duplicates and conflicts among the detected items
             is_first = True
             for score, p_idx, f_id in matches:
                 # Find corresponding item
@@ -133,9 +133,18 @@ class MatchingService:
                         if is_first:
                             is_first = False
                             item.conflict = has_intra_photo_conflict
+                            if has_intra_photo_conflict:
+                                item.notes = f"Conflict: Another face in Row {p_idx+1} also matched candidate {cand_id}."
                         else:
-                            item.is_duplicate = True
-                            item.notes = f"Duplicate appearance of student {cand_id}; consolidated to primary match."
+                            if p_idx == best_photo_idx:
+                                # Intra-photo conflict: distinct person in same row matched same identity
+                                item.conflict = True
+                                item.outcome = MatchOutcome.UNCERTAIN
+                                item.notes = f"Intra-row conflict: multiple faces in Row {p_idx+1} matched candidate {cand_id}. Flagged for faculty verification."
+                            else:
+                                # Genuine cross-photo multi-row appearance: consolidate cleanly
+                                item.is_duplicate = True
+                                item.notes = f"Cross-photo duplicate appearance of student {cand_id} in Row {p_idx+1}; consolidated to best match in Row {best_photo_idx+1}."
 
             # Retrieve candidate details
             matched_candidate = next((c for c in candidates if c.student_id == cand_id), None)

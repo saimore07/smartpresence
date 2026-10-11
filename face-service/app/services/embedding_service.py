@@ -1,4 +1,5 @@
 import os
+import threading
 import cv2
 import numpy as np
 from typing import List, Optional
@@ -11,6 +12,7 @@ class EmbeddingService:
         self.model_path = settings.SFACE_MODEL_PATH
         if not os.path.exists(self.model_path):
             raise FileNotFoundError(f"SFace model not found at {self.model_path}")
+        self._lock = threading.Lock()
         self.recognizer = cv2.FaceRecognizerSF.create(
             model=self.model_path,
             config=""
@@ -27,9 +29,10 @@ class EmbeddingService:
         Aligns the face using the 5 detected landmarks and extracts a 128-dimensional
         L2-normalized feature embedding using SFace.
         """
-        # alignCrop transforms and warps the face to standard 112x112 canonical pose
-        aligned_face = self.recognizer.alignCrop(image, raw_face)
-        feature = self.recognizer.feature(aligned_face)
+        with self._lock:
+            # alignCrop transforms and warps the face to standard 112x112 canonical pose
+            aligned_face = self.recognizer.alignCrop(image, raw_face)
+            feature = self.recognizer.feature(aligned_face)
         
         # Ensure L2 normalization
         feat_arr = np.array(feature, dtype=np.float32).flatten()

@@ -332,6 +332,38 @@ const getClassNames = async (req, res, next) => {
   }
 };
 
+// GET /api/students/portal/lookup?query=...
+const portalStudentLookup = async (req, res, next) => {
+  try {
+    const { query } = req.query;
+    if (!query || !query.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Search query is required.',
+      });
+    }
+
+    const cleanQuery = query.trim();
+    const students = await Student.find({
+      $or: [
+        { studentId: { $regex: cleanQuery, $options: 'i' } },
+        { rollNumber: { $regex: cleanQuery, $options: 'i' } },
+        { name: { $regex: cleanQuery, $options: 'i' } },
+      ],
+    })
+      .select('name studentId rollNumber className department year faceImageUrl faceEnrollmentStatus')
+      .limit(10)
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      students,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createStudent,
   getStudents,
@@ -340,4 +372,5 @@ module.exports = {
   updateStudent,
   deleteStudent,
   deleteFaceTemplate,
+  portalStudentLookup,
 };
