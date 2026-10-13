@@ -259,7 +259,7 @@ const getAttendance = async (req, res, next) => {
     let query = Attendance.find(filter)
       .sort({ createdAt: -1 })
       .populate('facultyId', 'name')
-      .populate('students.studentId', 'name rollNumber studentId')
+      .populate('students.studentId', 'name rollNumber studentId className year department')
       .lean();
 
     if (limit) {
@@ -285,7 +285,7 @@ const getAttendanceById = async (req, res, next) => {
   try {
     const attendance = await Attendance.findById(req.params.id)
       .populate('facultyId', 'name')
-      .populate('students.studentId', 'name rollNumber studentId')
+      .populate('students.studentId', 'name rollNumber studentId className year department')
       .lean();
 
     if (!attendance) {
@@ -403,6 +403,117 @@ const getAttendanceStats = async (req, res, next) => {
   }
 };
 
+// Helper to escape CSV values safely
+const escapeCsvField = (val) => {
+  if (val === undefined || val === null) return '""';
+  const str = String(val).replace(/"/g, '""');
+  return `"${str}"`;
+};
+
+// GET /api/attendance/export-csv or /api/attendance/:id/export-csv
+// Generates and streams standard CSV file with student name, class, division, subject, time, date, and status
+const exportAttendanceCsv = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { className, subject, date } = req.query;
+
+    let records = [];
+
+    if (id) {
+      const single = await Attendance.findById(id)
+        .populate('facultyId', 'name')
+        .populate('students.studentId', 'name rollNumber studentId className year department')
+        .lean();
+
+      if (!single) {
+        return res.status(404).json({
+          success: false,
+          message: 'Attendance record not found.',
+        });
+      }
+      records = [single];
+    } else {
+      let filter = {};
+      if (className) filter.className = className;
+      if (subject) filter.subject = subject;
+      if (date) filter.date = date;
+
+      records = await Attendance.find(filter)
+        .sort({ date: -1, createdAt: -1 })
+        .populate('facultyId', 'name')
+        .populate('students.studentId', 'name rollNumber studentId className year department')
+        .lean();
+    }
+
+    // Required columns: Student Name, Class, Division, Subject Name, Date, Time, Status
+    const headers = [
+      'Student Name',
+      'Roll Number',
+      'Student ID',
+      'Class',
+      'Division',
+      'Subject Name',
+      'Date',
+      'Time',
+      'Status',
+    ];
+
+    const rows = [headers.map(escapeCsvField).join(',')];
+
+    records.forEach((record) => {
+      const subjectName = record.subject || '';
+      const dateStr = record.date || '';
+
+      (record.students || []).forEach((entry) => {
+        const student = entry.studentId || {};
+        const studentName = student.name || 'Unknown';
+        const rollNumber = student.rollNumber || '';
+        const studentId = student.studentId || '';
+        const studentClass = student.year || record.className || '';
+        const studentDivision = student.className || record.className || '';
+        const status = entry.status === 'present' ? 'Present' : 'Absent';
+
+        const timestamp = entry.markedAt || record.createdAt;
+        let timeStr = '';
+        if (timestamp) {
+          try {
+            timeStr = new Date(timestamp).toLocaleTimeString('en-US', {
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: true,
+            });
+          } catch (e) {
+            timeStr = '';
+          }
+        }
+
+        rows.push([
+          escapeCsvField(studentName),
+          escapeCsvField(rollNumber),
+          escapeCsvField(studentId),
+          escapeCsvField(studentClass),
+          escapeCsvField(studentDivision),
+          escapeCsvField(subjectName),
+          escapeCsvField(dateStr),
+          escapeCsvField(timeStr),
+          escapeCsvField(status),
+        ].join(','));
+      });
+    });
+
+    const csvContent = rows.join('\r\n');
+    const filename = records.length === 1
+      ? `attendance-${records[0].className || 'class'}-${records[0].subject || 'subject'}-${records[0].date || 'date'}.csv`.replace(/[^a-zA-Z0-9._-]/g, '_')
+      : `attendance-report-${Date.now()}.csv`;
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.status(200).send(csvContent);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   recognizeSession,
   createAttendance,
@@ -410,4 +521,5 @@ module.exports = {
   getAttendanceById,
   getStudentAttendance,
   getAttendanceStats,
+  exportAttendanceCsv,
 };

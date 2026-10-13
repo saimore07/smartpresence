@@ -9,6 +9,7 @@ const {
   getAttendanceById,
   getStudentAttendance,
   getAttendanceStats,
+  exportAttendanceCsv,
 } = require('../controllers/attendance.controller');
 const authMiddleware = require('../middleware/auth.middleware');
 
@@ -43,6 +44,10 @@ router.get('/student/:studentId', getStudentAttendance);
 
 // All faculty administrative routes require authentication
 router.use(authMiddleware);
+
+// Export CSV endpoints (must precede /:id)
+router.get('/export-csv', exportAttendanceCsv);
+router.get('/:id/export-csv', exportAttendanceCsv);
 
 // Stats must come before :id to avoid route conflict
 router.get('/stats', getAttendanceStats);

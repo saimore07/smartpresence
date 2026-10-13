@@ -257,6 +257,16 @@ const runTests = async () => {
     assert(historyRes.body.records.length >= 1, 'Expected at least 1 attendance record');
     console.log(`Passed: Retrieved ${historyRes.body.records.length} attendance session records.\n`);
 
+    // TEST 15b: Export Attendance as CSV
+    console.log('--- TEST 15b: Export Attendance as CSV ---');
+    const csvExportRes = await makeRequest(`/api/attendance/${attRes.body.attendance._id}/export-csv`, 'GET', null, authToken);
+    assert(csvExportRes.status === 200, 'Failed to export attendance CSV');
+    assert(typeof csvExportRes.body === 'string' && csvExportRes.body.includes('Student Name'), 'CSV header missing');
+    assert(csvExportRes.body.includes('Present') && csvExportRes.body.includes('Absent'), 'CSV status values missing');
+    assert(csvExportRes.body.includes('Alex Johnson'), 'Student name missing from CSV');
+    assert(csvExportRes.body.includes('Test Subject AI'), 'Subject name missing from CSV');
+    console.log('Passed: Attendance CSV export endpoint generated and validated with all required columns.\n');
+
     // TEST 16: Student Attendance Statistics
     console.log('--- TEST 16: Student Attendance Statistics Calculation ---');
     const stuAttRes = await makeRequest(`/api/attendance/student/${testStudent._id}`, 'GET', null, authToken);
