@@ -35,6 +35,7 @@ export default function RootLayout() {
         <Stack.Screen name="faculty/take-attendance" options={{ title: 'Take Attendance' }} />
         <Stack.Screen name="faculty/attendance-review" options={{ title: 'Attendance Review' }} />
         <Stack.Screen name="faculty/attendance-history" options={{ title: 'Attendance History' }} />
+        <Stack.Screen name="student/dashboard" options={{ headerShown: false }} />
         <Stack.Screen name="student/profile" options={{ title: 'Student Profile' }} />
         <Stack.Screen name="student/attendance" options={{ title: 'My Attendance' }} />
       </Stack>

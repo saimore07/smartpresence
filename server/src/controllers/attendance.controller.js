@@ -153,11 +153,39 @@ const recognizeSession = async (req, res, next) => {
   }
 };
 
+// Helper to parse and validate 12-hour AM/PM time strings into minutes from midnight (0..1439)
+const parse12HourTime = (timeStr) => {
+  if (!timeStr || typeof timeStr !== 'string') return null;
+  const match = timeStr.trim().match(/^(0?[1-9]|1[0-2]):([0-5][0-9])\s*(AM|PM)$/i);
+  if (!match) return null;
+  let hours = parseInt(match[1], 10);
+  const minutes = parseInt(match[2], 10);
+  const period = match[3].toUpperCase();
+
+  if (period === 'PM' && hours < 12) {
+    hours += 12;
+  } else if (period === 'AM' && hours === 12) {
+    hours = 0;
+  }
+
+  return hours * 60 + minutes;
+};
+
 // POST /api/attendance
 // Finalizes confirmed attendance roster in MongoDB
 const createAttendance = async (req, res, next) => {
   try {
-    let { className, subject, date, sessionSlot = 'regular', students, capturedImageUrls, capturedImageUrl } = req.body;
+    let {
+      className,
+      subject,
+      date,
+      startTime,
+      endTime,
+      sessionSlot,
+      students,
+      capturedImageUrls,
+      capturedImageUrl,
+    } = req.body;
 
     if (typeof students === 'string') {
       try {
@@ -189,9 +217,60 @@ const createAttendance = async (req, res, next) => {
       });
     }
 
+    // Validate 12-hour session start and end times if supplied
+    let cleanStartTime = startTime ? startTime.trim() : '';
+    let cleanEndTime = endTime ? endTime.trim() : '';
+    let activeSlot = sessionSlot && sessionSlot.trim() ? sessionSlot.trim() : 'regular';
+
+    if (cleanStartTime || cleanEndTime) {
+      if (!cleanStartTime) {
+        return res.status(400).json({
+          success: false,
+          message: 'Session start time is required.',
+        });
+      }
+      if (!cleanEndTime) {
+        return res.status(400).json({
+          success: false,
+          message: 'Session end time is required.',
+        });
+      }
+
+      const startMinutes = parse12HourTime(cleanStartTime);
+      const endMinutes = parse12HourTime(cleanEndTime);
+
+      if (startMinutes === null) {
+        return res.status(400).json({
+          success: false,
+          message: 'Start time must be formatted as 12-hour time with AM/PM (e.g. 09:00 AM).',
+        });
+      }
+
+      if (endMinutes === null) {
+        return res.status(400).json({
+          success: false,
+          message: 'End time must be formatted as 12-hour time with AM/PM (e.g. 10:00 AM).',
+        });
+      }
+
+      if (endMinutes <= startMinutes) {
+        return res.status(400).json({
+          success: false,
+          message: 'End time must be later than start time for the class session.',
+        });
+      }
+
+      activeSlot = `${cleanStartTime} - ${cleanEndTime}`;
+    }
+
     // Check for duplicate attendance for this class + subject + date + sessionSlot
-    const activeSlot = (sessionSlot && sessionSlot.trim()) || 'regular';
-    const existing = await Attendance.findOne({ className, subject, date, sessionSlot: activeSlot });
+    const existing = await Attendance.findOne({
+      className,
+      subject,
+      date,
+      sessionSlot: activeSlot,
+    });
+
     if (existing) {
       return res.status(409).json({
         success: false,
@@ -219,6 +298,8 @@ const createAttendance = async (req, res, next) => {
       className,
       subject,
       date,
+      startTime: cleanStartTime,
+      endTime: cleanEndTime,
       sessionSlot: activeSlot,
       capturedImageUrl: primaryImageUrl,
       capturedImageUrls: allImageUrls,
@@ -233,7 +314,7 @@ const createAttendance = async (req, res, next) => {
 
     const populated = await Attendance.findById(attendance._id)
       .populate('facultyId', 'name')
-      .populate('students.studentId', 'name rollNumber studentId');
+      .populate('students.studentId', 'firstName lastName name rollNumber studentId');
 
     res.status(201).json({
       success: true,
@@ -441,7 +522,7 @@ const exportAttendanceCsv = async (req, res, next) => {
       records = await Attendance.find(filter)
         .sort({ date: -1, createdAt: -1 })
         .populate('facultyId', 'name')
-        .populate('students.studentId', 'name rollNumber studentId className year department')
+        .populate('students.studentId', 'firstName lastName name rollNumber studentId className year department')
         .lean();
     }
 
@@ -466,7 +547,12 @@ const exportAttendanceCsv = async (req, res, next) => {
 
       (record.students || []).forEach((entry) => {
         const student = entry.studentId || {};
-        const studentName = student.name || 'Unknown';
+        let studentName = student.name;
+        if (!studentName && (student.firstName || student.lastName)) {
+          studentName = `${student.firstName || ''} ${student.lastName || ''}`.trim();
+        }
+        if (!studentName) studentName = 'Unknown';
+
         const rollNumber = student.rollNumber || '';
         const studentId = student.studentId || '';
         const studentClass = student.year || record.className || '';
@@ -474,8 +560,8 @@ const exportAttendanceCsv = async (req, res, next) => {
         const status = entry.status === 'present' ? 'Present' : 'Absent';
 
         const timestamp = entry.markedAt || record.createdAt;
-        let timeStr = '';
-        if (timestamp) {
+        let timeStr = (record.startTime && record.endTime) ? `${record.startTime} - ${record.endTime}` : '';
+        if (!timeStr && timestamp) {
           try {
             timeStr = new Date(timestamp).toLocaleTimeString('en-US', {
               hour: '2-digit',

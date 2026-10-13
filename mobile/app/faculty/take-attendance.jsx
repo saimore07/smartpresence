@@ -17,8 +17,10 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImageManipulator from 'expo-image-manipulator';
 import CustomButton from '../../components/CustomButton';
 import CustomInput from '../../components/CustomInput';
+import SessionTimePicker from '../../components/SessionTimePicker';
 import { COLORS, SHADOWS } from '../../constants/config';
 import { getTodayDate } from '../../utils/attendance';
+import { validateSessionTime } from '../../utils/validation';
 import { getClassNames } from '../../services/studentService';
 import { recognizeAttendanceSession } from '../../services/attendanceService';
 import { setAttendanceSession, clearAttendanceSession } from '../../utils/attendanceSession';
@@ -31,6 +33,8 @@ export default function TakeAttendanceScreen() {
   const [className, setClassName] = useState('');
   const [subject, setSubject] = useState('');
   const [date, setDate] = useState(getTodayDate());
+  const [startTime, setStartTime] = useState('09:00 AM');
+  const [endTime, setEndTime] = useState('10:00 AM');
   const [errors, setErrors] = useState({});
   const [availableClasses, setAvailableClasses] = useState([]);
 
@@ -69,6 +73,12 @@ export default function TakeAttendanceScreen() {
     if (!className.trim()) errs.className = 'Class / Division is required';
     if (!subject.trim()) errs.subject = 'Subject is required';
     if (!date.trim()) errs.date = 'Date is required';
+
+    const timeValidation = validateSessionTime(startTime, endTime);
+    if (!timeValidation.valid) {
+      errs.time = timeValidation.error;
+    }
+
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -197,6 +207,8 @@ export default function TakeAttendanceScreen() {
         className: className.trim(),
         subject: subject.trim(),
         date: date.trim(),
+        startTime: startTime.trim(),
+        endTime: endTime.trim(),
         capturedImageUrls: response.capturedImageUrls || [],
         capturedPhotos: capturedRows,
         metrics: response.metrics,
@@ -458,6 +470,20 @@ export default function TakeAttendanceScreen() {
             value={date}
             onChangeText={setDate}
             error={errors.date}
+          />
+
+          <SessionTimePicker
+            startTime={startTime}
+            onStartTimeChange={(t) => {
+              setStartTime(t);
+              if (errors.time) setErrors((prev) => ({ ...prev, time: null }));
+            }}
+            endTime={endTime}
+            onEndTimeChange={(t) => {
+              setEndTime(t);
+              if (errors.time) setErrors((prev) => ({ ...prev, time: null }));
+            }}
+            error={errors.time}
           />
 
           <CustomButton

@@ -11,7 +11,7 @@ const {
   getAttendanceStats,
   exportAttendanceCsv,
 } = require('../controllers/attendance.controller');
-const authMiddleware = require('../middleware/auth.middleware');
+const { authMiddleware, requireFaculty } = require('../middleware/auth.middleware');
 
 // Multer config for classroom images
 const storage = multer.diskStorage({
@@ -39,11 +39,12 @@ const upload = multer({
   },
 });
 
-// Public student attendance check (unauthenticated)
+// Public student attendance check (unauthenticated legacy)
 router.get('/student/:studentId', getStudentAttendance);
 
-// All faculty administrative routes require authentication
+// All faculty administrative routes require authentication and faculty privileges
 router.use(authMiddleware);
+router.use(requireFaculty);
 
 // Export CSV endpoints (must precede /:id)
 router.get('/export-csv', exportAttendanceCsv);

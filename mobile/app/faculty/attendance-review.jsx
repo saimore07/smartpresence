@@ -290,6 +290,9 @@ export default function AttendanceReviewScreen() {
         className: session.className,
         subject: session.subject,
         date: session.date,
+        startTime: session.startTime || '',
+        endTime: session.endTime || '',
+        sessionSlot: session.startTime && session.endTime ? `${session.startTime} - ${session.endTime}` : 'regular',
         capturedImageUrls: session.capturedImageUrls || [],
         capturedImageUrl:
           session.capturedImageUrls && session.capturedImageUrls.length > 0
@@ -349,6 +352,7 @@ export default function AttendanceReviewScreen() {
             <Text style={styles.subjectText}>{session.subject}</Text>
             <Text style={styles.metaText}>
               Class: {session.className} • Date: {formatDate(session.date)}
+              {session.startTime && session.endTime ? ` • ${session.startTime} – ${session.endTime}` : ''}
             </Text>
           </View>
           <View style={styles.aiBadge}>

@@ -89,7 +89,12 @@ export default function StudentDetailsScreen() {
   };
 
   const isBiometricEnrolled = student?.faceEnrollmentStatus === 'enrolled' || !!student?.faceTemplate;
-  const imageUrl = getStudentImageUrl(student?.faceImageUrl);
+  const rawImageUrl = student?.faceImageUrl ? getStudentImageUrl(student.faceImageUrl) : null;
+  const imageUrl = typeof rawImageUrl === 'string' && rawImageUrl.trim().length > 0 ? rawImageUrl : null;
+  const displayName =
+    student?.name ||
+    `${student?.firstName || ''} ${student?.lastName || ''}`.trim() ||
+    'Student';
 
   if (loading || !student) {
     return <Loading message="Loading student details..." />;
@@ -105,12 +110,12 @@ export default function StudentDetailsScreen() {
           ) : (
             <View style={styles.avatarPlaceholder}>
               <Text style={styles.avatarText}>
-                {student?.name ? student.name.charAt(0).toUpperCase() : '?'}
+                {displayName.charAt(0).toUpperCase()}
               </Text>
             </View>
           )}
         </View>
-        <Text style={styles.studentName}>{student?.name}</Text>
+        <Text style={styles.studentName}>{displayName}</Text>
         <Text style={styles.studentClass}>
           {student?.className} • {student?.department}
         </Text>

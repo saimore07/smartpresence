@@ -4,7 +4,11 @@ import { COLORS, SHADOWS } from '../constants/config';
 import { getStudentImageUrl } from '../services/studentService';
 
 const StudentCard = ({ student, onPress }) => {
-  const imageUrl = getStudentImageUrl(student.faceImageUrl);
+  const imageUrl = getStudentImageUrl(student?.faceImageUrl);
+  const displayName =
+    student?.name ||
+    `${student?.firstName || ''} ${student?.lastName || ''}`.trim() ||
+    'Student';
 
   return (
     <TouchableOpacity
@@ -18,7 +22,7 @@ const StudentCard = ({ student, onPress }) => {
         ) : (
           <View style={styles.avatarPlaceholder}>
             <Text style={styles.avatarText}>
-              {student.name ? student.name.charAt(0).toUpperCase() : '?'}
+              {displayName.charAt(0).toUpperCase()}
             </Text>
           </View>
         )}
@@ -26,7 +30,7 @@ const StudentCard = ({ student, onPress }) => {
 
       <View style={styles.info}>
         <Text style={styles.name} numberOfLines={1}>
-          {student.name}
+          {displayName}
         </Text>
         <Text style={styles.detail}>
           Roll: {student.rollNumber}

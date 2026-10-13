@@ -51,6 +51,21 @@ export const deleteFaceTemplate = async (id) => {
   });
 };
 
+// Authenticated Student APIs
+export const getStudentMe = async () => {
+  return apiRequest('/students/me');
+};
+
+export const getStudentAttendanceSummary = async () => {
+  return apiRequest('/students/attendance/summary');
+};
+
+export const getStudentAttendanceHistory = async (params = {}) => {
+  const query = new URLSearchParams(params).toString();
+  const endpoint = query ? `/students/attendance/history?${query}` : '/students/attendance/history';
+  return apiRequest(endpoint);
+};
+
 // Build the full image URL for student photos
 export const getStudentImageUrl = (faceImageUrl) => {
   if (!faceImageUrl) return null;

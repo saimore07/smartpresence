@@ -11,8 +11,16 @@ const {
   deleteStudent,
   deleteFaceTemplate,
   portalStudentLookup,
+  getStudentMe,
+  getStudentAttendanceSummary,
+  getStudentAttendanceHistory,
 } = require('../controllers/student.controller');
-const authMiddleware = require('../middleware/auth.middleware');
+const {
+  authMiddleware,
+  requireFaculty,
+  requireStudent,
+  requireActiveStudent,
+} = require('../middleware/auth.middleware');
 
 // Multer config for student photos
 const storage = multer.diskStorage({
@@ -40,19 +48,22 @@ const upload = multer({
   },
 });
 
-// Public Student Portal routes (unauthenticated)
+// Public Student Portal lookup routes (legacy search)
 router.get('/portal/lookup', portalStudentLookup);
 router.get('/portal/:id', getStudentById);
 
-// All faculty administrative routes require authentication
-router.use(authMiddleware);
+// Authenticated Student routes (strictly scoped to student's own JWT token)
+router.get('/me', authMiddleware, requireStudent, getStudentMe);
+router.get('/attendance/summary', authMiddleware, requireStudent, requireActiveStudent, getStudentAttendanceSummary);
+router.get('/attendance/history', authMiddleware, requireStudent, requireActiveStudent, getStudentAttendanceHistory);
 
-router.post('/', upload.single('faceImage'), createStudent);
-router.get('/', getStudents);
-router.get('/classes', getClassNames);
-router.get('/:id', getStudentById);
-router.put('/:id', upload.single('faceImage'), updateStudent);
-router.delete('/:id', deleteStudent);
-router.delete('/:id/face-template', deleteFaceTemplate);
+// Faculty administrative routes (strictly protected against student tokens)
+router.post('/', authMiddleware, requireFaculty, upload.single('faceImage'), createStudent);
+router.get('/', authMiddleware, requireFaculty, getStudents);
+router.get('/classes', authMiddleware, requireFaculty, getClassNames);
+router.get('/:id', authMiddleware, requireFaculty, getStudentById);
+router.put('/:id', authMiddleware, requireFaculty, upload.single('faceImage'), updateStudent);
+router.delete('/:id', authMiddleware, requireFaculty, deleteStudent);
+router.delete('/:id/face-template', authMiddleware, requireFaculty, deleteFaceTemplate);
 
 module.exports = router;

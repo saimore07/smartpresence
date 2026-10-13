@@ -14,6 +14,20 @@ export const login = async (email, password) => {
   });
 };
 
+export const studentLogin = async (email, password) => {
+  return apiRequest('/auth/student/login', {
+    method: 'POST',
+    body: { email, password },
+  });
+};
+
+export const studentChangePassword = async (oldPassword, newPassword, confirmPassword) => {
+  return apiRequest('/auth/student/change-password', {
+    method: 'POST',
+    body: { oldPassword, newPassword, confirmPassword },
+  });
+};
+
 export const getMe = async () => {
   return apiRequest('/auth/me');
 };

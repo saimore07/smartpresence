@@ -51,6 +51,16 @@ const attendanceSchema = new mongoose.Schema({
     default: 'regular',
     trim: true,
   },
+  startTime: {
+    type: String,
+    default: '',
+    trim: true,
+  },
+  endTime: {
+    type: String,
+    default: '',
+    trim: true,
+  },
   capturedImageUrl: {
     type: String,
     default: '',

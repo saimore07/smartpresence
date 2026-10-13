@@ -36,9 +36,10 @@ export const AuthProvider = ({ children }) => {
           // Invalid token
           await AsyncStorage.removeItem(TOKEN_KEY);
           setToken(null);
+          setUser(null);
         }
       }
-    } catch (error) {
+    } catch {
       // Token expired or invalid
       await AsyncStorage.removeItem(TOKEN_KEY);
       setToken(null);
@@ -48,12 +49,22 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const loginUser = async (email, password) => {
+  const loginFaculty = async (email, password) => {
     const response = await authService.login(email, password);
     if (response.success) {
       await AsyncStorage.setItem(TOKEN_KEY, response.token);
       setToken(response.token);
-      setUser(response.user);
+      setUser({ ...response.user, role: 'faculty' });
+    }
+    return response;
+  };
+
+  const loginStudent = async (email, password) => {
+    const response = await authService.studentLogin(email, password);
+    if (response.success) {
+      await AsyncStorage.setItem(TOKEN_KEY, response.token);
+      setToken(response.token);
+      setUser({ ...response.user, role: 'student', mustChangePassword: response.mustChangePassword });
     }
     return response;
   };
@@ -63,9 +74,19 @@ export const AuthProvider = ({ children }) => {
     if (response.success) {
       await AsyncStorage.setItem(TOKEN_KEY, response.token);
       setToken(response.token);
-      setUser(response.user);
+      setUser({ ...response.user, role: 'faculty' });
     }
     return response;
+  };
+
+  const updateUserSession = (updatedUser, newToken = null) => {
+    if (newToken) {
+      AsyncStorage.setItem(TOKEN_KEY, newToken).catch(() => {});
+      setToken(newToken);
+    }
+    if (updatedUser) {
+      setUser((prev) => ({ ...(prev || {}), ...updatedUser }));
+    }
   };
 
   const logout = async () => {
@@ -79,8 +100,12 @@ export const AuthProvider = ({ children }) => {
     token,
     loading,
     isAuthenticated: !!user && !!token,
-    login: loginUser,
+    isFaculty: user?.role === 'faculty',
+    isStudent: user?.role === 'student',
+    login: loginFaculty,
+    studentLogin: loginStudent,
     signup: signupUser,
+    updateUser: updateUserSession,
     logout,
     restoreSession,
   };

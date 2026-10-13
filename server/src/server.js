@@ -2,6 +2,7 @@ require('dotenv').config();
 
 const app = require('./app');
 const connectDB = require('./config/db');
+const runMigrations = require('./migrations/migrateDatabase');
 
 const os = require('os');
 
@@ -23,6 +24,9 @@ const startServer = async () => {
   try {
     // Connect to MongoDB
     await connectDB();
+
+    // Run database migrations and index sanity check
+    await runMigrations();
 
     // Start Express server on all network interfaces
     app.listen(PORT, '0.0.0.0', () => {

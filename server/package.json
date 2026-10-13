@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "test": "node test/e2e.test.js"
+    "migrate": "node src/migrations/migrateDatabase.js",
+    "test": "node test/e2e.test.js && node test/features_enhancement.test.js"
   },
   "keywords": ["attendance", "college", "facial-recognition"],
   "author": "",

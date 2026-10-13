@@ -28,7 +28,8 @@ export default function EnrollStudentScreen() {
   // Flow steps: 'form' | 'camera' - Form first, camera opens smoothly once screen is settled
   const [step, setStep] = useState('form');
   const [form, setForm] = useState({
-    name: '',
+    firstName: '',
+    lastName: '',
     studentId: '',
     rollNumber: '',
     email: '',
@@ -109,7 +110,9 @@ export default function EnrollStudentScreen() {
     try {
       // Build FormData for multipart upload
       const formData = new FormData();
-      formData.append('name', form.name.trim());
+      formData.append('firstName', form.firstName.trim());
+      formData.append('lastName', form.lastName.trim());
+      formData.append('name', `${form.firstName.trim()} ${form.lastName.trim()}`);
       formData.append('studentId', form.studentId.trim());
       formData.append('rollNumber', form.rollNumber.trim());
       formData.append('email', form.email.trim());
@@ -132,14 +135,23 @@ export default function EnrollStudentScreen() {
         });
       }
 
-      await createStudent(formData);
+      const response = await createStudent(formData);
 
       setPhoto(null);
-      Alert.alert('Success', 'Student enrolled successfully.', [
-        { text: 'OK', onPress: () => router.back() },
-      ]);
+      const tempPass = response?.activation?.temporaryPassword;
+      if (tempPass) {
+        Alert.alert(
+          'Student Enrolled Successfully',
+          `Student login credentials provisioned:\n\n📧 Email: ${form.email.trim()}\n🔑 Temporary Password: ${tempPass}\n\nPlease share this password with the student. They will set a permanent password upon first login.`,
+          [{ text: 'Done', onPress: () => router.back() }]
+        );
+      } else {
+        Alert.alert('Success', 'Student enrolled successfully.', [
+          { text: 'OK', onPress: () => router.back() },
+        ]);
+      }
     } catch (error) {
-      Alert.alert('Error', error.message || 'Failed to enroll student.');
+      Alert.alert('Enrollment Error', error.message || 'Failed to enroll student.');
     } finally {
       setLoading(false);
     }
@@ -156,8 +168,8 @@ export default function EnrollStudentScreen() {
               <Text style={styles.cameraRowBadgeText}>📸 Student Enrollment</Text>
             </View>
             <Text style={styles.cameraHeaderSubject} numberOfLines={1}>
-              {form.name || form.studentId
-                ? `${form.name || 'Student'} ${form.studentId ? `(${form.studentId})` : ''}`
+              {form.firstName || form.studentId
+                ? `${`${form.firstName || ''} ${form.lastName || ''}`.trim() || 'Student'} ${form.studentId ? `(${form.studentId})` : ''}`
                 : 'Face Biometric Capture'}
             </Text>
             <View style={styles.liveBadge}>
@@ -317,14 +329,23 @@ export default function EnrollStudentScreen() {
             )}
           </View>
 
-          {/* Student Form Inputs */}
+          {/* Student Form Inputs: First & Last Name, Compulsory Email */}
           <CustomInput
-            label="Full Name *"
-            value={form.name}
-            onChangeText={(v) => updateField('name', v)}
-            placeholder="Enter student's full name"
+            label="First Name *"
+            value={form.firstName}
+            onChangeText={(v) => updateField('firstName', v)}
+            placeholder="e.g., Rahul"
             autoCapitalize="words"
-            error={errors.name}
+            error={errors.firstName}
+          />
+
+          <CustomInput
+            label="Last Name *"
+            value={form.lastName}
+            onChangeText={(v) => updateField('lastName', v)}
+            placeholder="e.g., Sharma"
+            autoCapitalize="words"
+            error={errors.lastName}
           />
 
           <CustomInput
@@ -344,10 +365,10 @@ export default function EnrollStudentScreen() {
           />
 
           <CustomInput
-            label="Email (optional)"
+            label="Student Email *"
             value={form.email}
             onChangeText={(v) => updateField('email', v)}
-            placeholder="Enter student email"
+            placeholder="e.g., rahul.sharma@college.edu"
             keyboardType="email-address"
             autoCapitalize="none"
             error={errors.email}
