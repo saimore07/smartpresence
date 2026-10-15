@@ -17,7 +17,9 @@ const {
 } = require('../controllers/student.controller');
 const {
   authMiddleware,
+  requireAdmin,
   requireFaculty,
+  requireAdminOrFaculty,
   requireStudent,
   requireActiveStudent,
 } = require('../middleware/auth.middleware');
@@ -57,13 +59,15 @@ router.get('/me', authMiddleware, requireStudent, getStudentMe);
 router.get('/attendance/summary', authMiddleware, requireStudent, requireActiveStudent, getStudentAttendanceSummary);
 router.get('/attendance/history', authMiddleware, requireStudent, requireActiveStudent, getStudentAttendanceHistory);
 
-// Faculty administrative routes (strictly protected against student tokens)
-router.post('/', authMiddleware, requireFaculty, upload.single('faceImage'), createStudent);
-router.get('/', authMiddleware, requireFaculty, getStudents);
-router.get('/classes', authMiddleware, requireFaculty, getClassNames);
-router.get('/:id', authMiddleware, requireFaculty, getStudentById);
-router.put('/:id', authMiddleware, requireFaculty, upload.single('faceImage'), updateStudent);
-router.delete('/:id', authMiddleware, requireFaculty, deleteStudent);
-router.delete('/:id/face-template', authMiddleware, requireFaculty, deleteFaceTemplate);
+// Centralized Admin-only enrollment and mutation routes
+router.post('/', authMiddleware, requireAdmin, upload.single('faceImage'), createStudent);
+router.put('/:id', authMiddleware, requireAdmin, upload.single('faceImage'), updateStudent);
+router.delete('/:id', authMiddleware, requireAdmin, deleteStudent);
+router.delete('/:id/face-template', authMiddleware, requireAdmin, deleteFaceTemplate);
+
+// Student roster listing and details accessible to both Admin and Faculty
+router.get('/', authMiddleware, requireAdminOrFaculty, getStudents);
+router.get('/classes', authMiddleware, requireAdminOrFaculty, getClassNames);
+router.get('/:id', authMiddleware, requireAdminOrFaculty, getStudentById);
 
 module.exports = router;

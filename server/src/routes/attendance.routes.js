@@ -10,8 +10,13 @@ const {
   getStudentAttendance,
   getAttendanceStats,
   exportAttendanceCsv,
+  getAssignedSubjects,
 } = require('../controllers/attendance.controller');
-const { authMiddleware, requireFaculty } = require('../middleware/auth.middleware');
+const {
+  authMiddleware,
+  requireFaculty,
+  requireAdminOrFaculty,
+} = require('../middleware/auth.middleware');
 
 // Multer config for classroom images
 const storage = multer.diskStorage({
@@ -39,26 +44,30 @@ const upload = multer({
   },
 });
 
-// Public student attendance check (unauthenticated legacy)
+// Student attendance lookup (compatible with student ID check)
 router.get('/student/:studentId', getStudentAttendance);
 
-// All faculty administrative routes require authentication and faculty privileges
+// Protected routes require valid authentication
 router.use(authMiddleware);
-router.use(requireFaculty);
+
+// Faculty assigned subjects endpoint (also accessible to admin)
+router.get('/subjects', requireAdminOrFaculty, getAssignedSubjects);
 
 // Export CSV endpoints (must precede /:id)
-router.get('/export-csv', exportAttendanceCsv);
-router.get('/:id/export-csv', exportAttendanceCsv);
+router.get('/export-csv', requireAdminOrFaculty, exportAttendanceCsv);
+router.get('/:id/export-csv', requireAdminOrFaculty, exportAttendanceCsv);
 
 // Stats must come before :id to avoid route conflict
-router.get('/stats', getAttendanceStats);
+router.get('/stats', requireAdminOrFaculty, getAttendanceStats);
 
-// Recognition analysis for multiple row photographs
-router.post('/recognize-session', upload.array('classroomImages', 8), recognizeSession);
+// Recognition analysis for multiple row photographs (Faculty only)
+router.post('/recognize-session', requireFaculty, upload.array('classroomImages', 8), recognizeSession);
 
-// Final confirmation persistence
-router.post('/', upload.single('classroomImage'), createAttendance);
-router.get('/', getAttendance);
-router.get('/:id', getAttendanceById);
+// Final confirmation persistence (Faculty only)
+router.post('/', requireFaculty, upload.single('classroomImage'), createAttendance);
+
+// Attendance history list and single record
+router.get('/', requireAdminOrFaculty, getAttendance);
+router.get('/:id', requireAdminOrFaculty, getAttendanceById);
 
 module.exports = router;

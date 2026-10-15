@@ -34,9 +34,12 @@ export const getAttendanceStats = async () => {
   return apiRequest('/attendance/stats');
 };
 
+export const getAssignedSubjects = async () => {
+  return apiRequest('/attendance/subjects');
+};
+
 export const getAttendanceCsvUrl = (id = null, params = {}) => {
   const query = new URLSearchParams(params).toString();
   const base = id ? `/attendance/${id}/export-csv` : '/attendance/export-csv';
   return query ? `${base}?${query}` : base;
 };
-

@@ -22,7 +22,7 @@ import { COLORS, SHADOWS } from '../../constants/config';
 import { getTodayDate } from '../../utils/attendance';
 import { validateSessionTime } from '../../utils/validation';
 import { getClassNames } from '../../services/studentService';
-import { recognizeAttendanceSession } from '../../services/attendanceService';
+import { recognizeAttendanceSession, getAssignedSubjects } from '../../services/attendanceService';
 import { setAttendanceSession, clearAttendanceSession } from '../../utils/attendanceSession';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -37,6 +37,7 @@ export default function TakeAttendanceScreen() {
   const [endTime, setEndTime] = useState('10:00 AM');
   const [errors, setErrors] = useState({});
   const [availableClasses, setAvailableClasses] = useState([]);
+  const [assignedSubjects, setAssignedSubjects] = useState([]);
 
   // Flow steps: 'form' | 'camera' | 'review_rows'
   const [step, setStep] = useState('form');
@@ -52,6 +53,7 @@ export default function TakeAttendanceScreen() {
   useEffect(() => {
     clearAttendanceSession();
     loadClasses();
+    loadSubjects();
   }, []);
 
   const loadClasses = async () => {
@@ -61,6 +63,20 @@ export default function TakeAttendanceScreen() {
         setAvailableClasses(response.classes);
         if (response.classes.length > 0 && !className) {
           setClassName(response.classes[0]);
+        }
+      }
+    } catch {
+      // Non-blocking
+    }
+  };
+
+  const loadSubjects = async () => {
+    try {
+      const res = await getAssignedSubjects();
+      if (res && res.success && Array.isArray(res.subjects) && res.subjects.length > 0) {
+        setAssignedSubjects(res.subjects);
+        if (!subject) {
+          setSubject(res.subjects[0]);
         }
       }
     } catch {
@@ -455,6 +471,29 @@ export default function TakeAttendanceScreen() {
             onChangeText={setClassName}
             error={errors.className}
           />
+
+          {/* Assigned Subjects Quick Selector */}
+          {assignedSubjects.length > 0 && (
+            <View style={styles.quickClassContainer}>
+              <Text style={styles.quickClassLabel}>Select Assigned Subject:</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.classChipsScroll}>
+                {assignedSubjects.map((sub) => (
+                  <TouchableOpacity
+                    key={sub}
+                    style={[styles.classChip, subject === sub && styles.classChipSelected]}
+                    onPress={() => {
+                      setSubject(sub);
+                      if (errors.subject) setErrors((prev) => ({ ...prev, subject: null }));
+                    }}
+                  >
+                    <Text style={[styles.classChipText, subject === sub && styles.classChipTextSelected]}>
+                      {sub}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
 
           <CustomInput
             label="Subject *"

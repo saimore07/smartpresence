@@ -6,6 +6,7 @@ const fs = require('fs');
 const authRoutes = require('./routes/auth.routes');
 const studentRoutes = require('./routes/student.routes');
 const attendanceRoutes = require('./routes/attendance.routes');
+const adminRoutes = require('./routes/admin.routes');
 const errorMiddleware = require('./middleware/error.middleware');
 
 const app = express();
@@ -45,6 +46,7 @@ app.get('/api/health', (req, res) => {
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/admin', adminRoutes);
 app.use('/api/students', studentRoutes);
 app.use('/api/attendance', attendanceRoutes);
 

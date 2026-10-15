@@ -37,6 +37,14 @@ const facultySchema = new mongoose.Schema({
     default: 'faculty',
     enum: ['faculty'],
   },
+  assignedSubjects: {
+    type: [String],
+    default: [],
+  },
+  isActive: {
+    type: Boolean,
+    default: true,
+  },
   createdAt: {
     type: Date,
     default: Date.now,

@@ -1,7 +1,80 @@
 const Attendance = require('../models/Attendance');
 const Student = require('../models/Student');
+const Subject = require('../models/Subject');
 const FaceTemplate = require('../models/FaceTemplate');
 const faceClient = require('../utils/faceClient');
+
+const escapeRegExp = (string) => {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+};
+
+/**
+ * Retrieves the set of subject names authorized for the given user.
+ * For Admin, returns null (meaning unconstrained access).
+ * For Faculty, returns an array of assigned subject names.
+ */
+const getAuthorizedSubjectNames = async (user) => {
+  if (!user) return [];
+  if (user.role === 'admin') return null; // Unrestricted access for Administrators
+
+  const explicitSubjects = Array.isArray(user.assignedSubjects) ? user.assignedSubjects : [];
+
+  // Also query Subject collection where facultyIds contains user._id
+  const subjectDocs = await Subject.find({
+    $or: [
+      { facultyIds: user._id },
+      { name: { $in: explicitSubjects } },
+    ],
+  })
+    .select('name')
+    .lean();
+
+  const nameSet = new Set([
+    ...explicitSubjects.map((s) => s.trim()).filter(Boolean),
+    ...subjectDocs.map((s) => s.name.trim()).filter(Boolean),
+  ]);
+
+  return Array.from(nameSet);
+};
+
+// GET /api/attendance/subjects
+// Returns authorized subjects for the logged-in user (Faculty assigned subjects or Admin all subjects)
+const getAssignedSubjects = async (req, res, next) => {
+  try {
+    const authorizedSubjects = await getAuthorizedSubjectNames(req.user);
+
+    if (authorizedSubjects === null) {
+      // Administrator: returns all active canonical subjects
+      const allSubjects = await Subject.find({ isActive: true })
+        .populate('facultyIds', 'name email department facultyId')
+        .sort({ name: 1 })
+        .lean();
+
+      return res.status(200).json({
+        success: true,
+        subjects: Array.from(new Set(allSubjects.map((s) => s.name))),
+        details: allSubjects,
+      });
+    }
+
+    // Faculty: return subjects assigned to this faculty member
+    const subjectDocs = await Subject.find({
+      name: { $in: authorizedSubjects },
+      isActive: true,
+    })
+      .populate('facultyIds', 'name email department facultyId')
+      .sort({ name: 1 })
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      subjects: authorizedSubjects,
+      details: subjectDocs,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 
 // POST /api/attendance/recognize-session
 // Uploads 1 to 8 classroom photographs, calls AI microservice, returns structured proposed attendance
@@ -16,6 +89,21 @@ const recognizeSession = async (req, res, next) => {
       });
     }
 
+    // Enforce faculty-specific subject authorization on backend
+    const authorizedSubjects = await getAuthorizedSubjectNames(req.user);
+    if (authorizedSubjects !== null) {
+      const cleanSubject = subject.trim();
+      const isAuthorized = authorizedSubjects.some(
+        (s) => s.toLowerCase() === cleanSubject.toLowerCase()
+      );
+      if (!isAuthorized) {
+        return res.status(403).json({
+          success: false,
+          message: `Access denied. You are not authorized to take attendance for subject "${cleanSubject}".`,
+        });
+      }
+    }
+
     if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
       return res.status(400).json({
         success: false,
@@ -23,12 +111,12 @@ const recognizeSession = async (req, res, next) => {
       });
     }
 
-    // 1. Verify students enrolled in this class
-    const classStudents = await Student.find({ className: className.trim() }).lean();
+    // 1. Verify students enrolled in this class (active only)
+    const classStudents = await Student.find({ className: className.trim(), isActive: true }).lean();
     if (classStudents.length === 0) {
       return res.status(400).json({
         success: false,
-        message: `No students are enrolled in class "${className}". Please enroll students before taking attendance.`,
+        message: `No active students are enrolled in class "${className}". Please enroll students before taking attendance.`,
       });
     }
 
@@ -158,6 +246,7 @@ const parse12HourTime = (timeStr) => {
   if (!timeStr || typeof timeStr !== 'string') return null;
   const match = timeStr.trim().match(/^(0?[1-9]|1[0-2]):([0-5][0-9])\s*(AM|PM)$/i);
   if (!match) return null;
+
   let hours = parseInt(match[1], 10);
   const minutes = parseInt(match[2], 10);
   const period = match[3].toUpperCase();
@@ -208,6 +297,22 @@ const createAttendance = async (req, res, next) => {
         success: false,
         message: 'Class name, subject, and date are required.',
       });
+    }
+
+    const cleanSubject = subject.trim();
+
+    // Enforce faculty-specific subject authorization on backend
+    const authorizedSubjects = await getAuthorizedSubjectNames(req.user);
+    if (authorizedSubjects !== null) {
+      const isAuthorized = authorizedSubjects.some(
+        (s) => s.toLowerCase() === cleanSubject.toLowerCase()
+      );
+      if (!isAuthorized) {
+        return res.status(403).json({
+          success: false,
+          message: `Access denied. You are not authorized to record attendance for subject "${cleanSubject}".`,
+        });
+      }
     }
 
     if (!students || !Array.isArray(students) || students.length === 0) {
@@ -265,9 +370,9 @@ const createAttendance = async (req, res, next) => {
 
     // Check for duplicate attendance for this class + subject + date + sessionSlot
     const existing = await Attendance.findOne({
-      className,
-      subject,
-      date,
+      className: className.trim(),
+      subject: cleanSubject,
+      date: date.trim(),
       sessionSlot: activeSlot,
     });
 
@@ -293,11 +398,12 @@ const createAttendance = async (req, res, next) => {
       primaryImageUrl = allImageUrls[0];
     }
 
+    // Always enforce authenticated faculty identity - NEVER trust client-supplied facultyId
     const attendance = await Attendance.create({
       facultyId: req.user._id,
-      className,
-      subject,
-      date,
+      className: className.trim(),
+      subject: cleanSubject,
+      date: date.trim(),
       startTime: cleanStartTime,
       endTime: cleanEndTime,
       sessionSlot: activeSlot,
@@ -313,7 +419,7 @@ const createAttendance = async (req, res, next) => {
     });
 
     const populated = await Attendance.findById(attendance._id)
-      .populate('facultyId', 'name')
+      .populate('facultyId', 'name email facultyId')
       .populate('students.studentId', 'firstName lastName name rollNumber studentId');
 
     res.status(201).json({
@@ -327,20 +433,52 @@ const createAttendance = async (req, res, next) => {
 };
 
 // GET /api/attendance
+// Returns attendance sessions strictly filtered to authorized subjects for faculty
 const getAttendance = async (req, res, next) => {
   try {
     const { className, subject, date, page, limit } = req.query;
 
     let filter = {};
 
-    if (className) filter.className = className;
-    if (subject) filter.subject = subject;
-    if (date) filter.date = date;
+    const authorizedSubjects = await getAuthorizedSubjectNames(req.user);
+
+    if (authorizedSubjects !== null) {
+      // Faculty user: strictly enforce authorized subjects
+      if (authorizedSubjects.length === 0) {
+        return res.status(200).json({
+          success: true,
+          count: 0,
+          records: [],
+        });
+      }
+
+      if (subject) {
+        const cleanSubject = subject.trim();
+        const isAuthorized = authorizedSubjects.some(
+          (s) => s.toLowerCase() === cleanSubject.toLowerCase()
+        );
+        if (!isAuthorized) {
+          return res.status(403).json({
+            success: false,
+            message: `Access denied. You are not authorized to view attendance history for subject "${cleanSubject}".`,
+          });
+        }
+        filter.subject = { $regex: new RegExp(`^${escapeRegExp(cleanSubject)}$`, 'i') };
+      } else {
+        filter.subject = { $in: authorizedSubjects };
+      }
+    } else if (subject) {
+      // Administrator: can filter by requested subject or view all
+      filter.subject = subject.trim();
+    }
+
+    if (className) filter.className = className.trim();
+    if (date) filter.date = date.trim();
 
     let query = Attendance.find(filter)
       .sort({ createdAt: -1 })
-      .populate('facultyId', 'name')
-      .populate('students.studentId', 'name rollNumber studentId className year department')
+      .populate('facultyId', 'name email facultyId')
+      .populate('students.studentId', 'firstName lastName name rollNumber studentId className year department')
       .lean();
 
     if (limit) {
@@ -365,8 +503,8 @@ const getAttendance = async (req, res, next) => {
 const getAttendanceById = async (req, res, next) => {
   try {
     const attendance = await Attendance.findById(req.params.id)
-      .populate('facultyId', 'name')
-      .populate('students.studentId', 'name rollNumber studentId className year department')
+      .populate('facultyId', 'name email facultyId')
+      .populate('students.studentId', 'firstName lastName name rollNumber studentId className year department')
       .lean();
 
     if (!attendance) {
@@ -374,6 +512,20 @@ const getAttendanceById = async (req, res, next) => {
         success: false,
         message: 'Attendance record not found.',
       });
+    }
+
+    // Enforce faculty-specific subject authorization on backend
+    const authorizedSubjects = await getAuthorizedSubjectNames(req.user);
+    if (authorizedSubjects !== null) {
+      const isAuthorized = authorizedSubjects.some(
+        (s) => s.toLowerCase() === (attendance.subject || '').trim().toLowerCase()
+      );
+      if (!isAuthorized) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. You are not authorized to view attendance records for this subject.',
+        });
+      }
     }
 
     res.status(200).json({
@@ -386,15 +538,26 @@ const getAttendanceById = async (req, res, next) => {
 };
 
 // GET /api/attendance/student/:studentId
+// Returns a student's attendance history scoped strictly to the authorized subjects for faculty
 const getStudentAttendance = async (req, res, next) => {
   try {
     const { studentId } = req.params;
 
-    const records = await Attendance.find({
+    let filter = {
       'students.studentId': studentId,
-    })
+    };
+
+    // If request has authenticated user, enforce role scoping
+    if (req.user) {
+      const authorizedSubjects = await getAuthorizedSubjectNames(req.user);
+      if (authorizedSubjects !== null) {
+        filter.subject = { $in: authorizedSubjects };
+      }
+    }
+
+    const records = await Attendance.find(filter)
       .sort({ date: -1 })
-      .populate('facultyId', 'name')
+      .populate('facultyId', 'name email facultyId')
       .lean();
 
     const attendance = records.map((record) => {
@@ -432,14 +595,46 @@ const getStudentAttendance = async (req, res, next) => {
 };
 
 // GET /api/attendance/stats
+// Calculates attendance statistics scoped strictly to authorized subjects for faculty
 const getAttendanceStats = async (req, res, next) => {
   try {
     const today = new Date().toISOString().split('T')[0];
+    const authorizedSubjects = await getAuthorizedSubjectNames(req.user);
+
+    let sessionFilter = {};
+    let todayFilter = { date: today };
+
+    if (authorizedSubjects !== null) {
+      if (authorizedSubjects.length === 0) {
+        return res.status(200).json({
+          success: true,
+          stats: {
+            totalStudents: 0,
+            todaySessions: 0,
+            todayPresent: 0,
+            todayTotal: 0,
+            averageAttendance: 0,
+            totalSessions: 0,
+            assignedSubjects: [],
+          },
+        });
+      }
+      sessionFilter.subject = { $in: authorizedSubjects };
+      todayFilter.subject = { $in: authorizedSubjects };
+    }
+
+    // Determine relevant class names to accurately count total eligible students
+    const distinctClassNames = await Attendance.distinct('className', sessionFilter);
+    const studentFilter = { isActive: true };
+    if (distinctClassNames && distinctClassNames.length > 0) {
+      studentFilter.className = { $in: distinctClassNames };
+    }
 
     const [totalStudents, todayRecords, allTimeAgg, totalSessions] = await Promise.all([
-      Student.countDocuments(),
-      Attendance.find({ date: today }).select('students.status').lean(),
+      Student.countDocuments(studentFilter),
+      Attendance.find(todayFilter).select('students.status').lean(),
       Attendance.aggregate([
+        { $match: sessionFilter },
         { $unwind: '$students' },
         {
           $group: {
@@ -451,7 +646,7 @@ const getAttendanceStats = async (req, res, next) => {
           },
         },
       ]),
-      Attendance.countDocuments(),
+      Attendance.countDocuments(sessionFilter),
     ]);
 
     let todayPresent = 0;
@@ -477,6 +672,7 @@ const getAttendanceStats = async (req, res, next) => {
         todayTotal,
         averageAttendance: parseFloat(averageAttendance),
         totalSessions,
+        assignedSubjects: authorizedSubjects || [],
       },
     });
   } catch (error) {
@@ -492,11 +688,13 @@ const escapeCsvField = (val) => {
 };
 
 // GET /api/attendance/export-csv or /api/attendance/:id/export-csv
-// Generates and streams standard CSV file with student name, class, division, subject, time, date, and status
+// Generates standard CSV file scoped strictly to authorized subjects for faculty
 const exportAttendanceCsv = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { className, subject, date } = req.query;
+
+    const authorizedSubjects = await getAuthorizedSubjectNames(req.user);
 
     let records = [];
 
@@ -512,12 +710,48 @@ const exportAttendanceCsv = async (req, res, next) => {
           message: 'Attendance record not found.',
         });
       }
+
+      if (authorizedSubjects !== null) {
+        const isAuthorized = authorizedSubjects.some(
+          (s) => s.toLowerCase() === (single.subject || '').trim().toLowerCase()
+        );
+        if (!isAuthorized) {
+          return res.status(403).json({
+            success: false,
+            message: 'Access denied. You are not authorized to export attendance records for this subject.',
+          });
+        }
+      }
       records = [single];
     } else {
       let filter = {};
-      if (className) filter.className = className;
-      if (subject) filter.subject = subject;
-      if (date) filter.date = date;
+
+      if (authorizedSubjects !== null) {
+        if (authorizedSubjects.length === 0) {
+          return res.status(200).send('Student Name,Roll Number,Student ID,Class,Division,Subject Name,Date,Time,Status\r\n');
+        }
+
+        if (subject) {
+          const cleanSubject = subject.trim();
+          const isAuthorized = authorizedSubjects.some(
+            (s) => s.toLowerCase() === cleanSubject.toLowerCase()
+          );
+          if (!isAuthorized) {
+            return res.status(403).json({
+              success: false,
+              message: `Access denied. You are not authorized to export attendance for subject "${cleanSubject}".`,
+            });
+          }
+          filter.subject = { $regex: new RegExp(`^${escapeRegExp(cleanSubject)}$`, 'i') };
+        } else {
+          filter.subject = { $in: authorizedSubjects };
+        }
+      } else if (subject) {
+        filter.subject = subject.trim();
+      }
+
+      if (className) filter.className = className.trim();
+      if (date) filter.date = date.trim();
 
       records = await Attendance.find(filter)
         .sort({ date: -1, createdAt: -1 })
@@ -560,7 +794,7 @@ const exportAttendanceCsv = async (req, res, next) => {
         const status = entry.status === 'present' ? 'Present' : 'Absent';
 
         const timestamp = entry.markedAt || record.createdAt;
-        let timeStr = (record.startTime && record.endTime) ? `${record.startTime} - ${record.endTime}` : '';
+        let timeStr = record.startTime && record.endTime ? `${record.startTime} - ${record.endTime}` : '';
         if (!timeStr && timestamp) {
           try {
             timeStr = new Date(timestamp).toLocaleTimeString('en-US', {
@@ -573,24 +807,30 @@ const exportAttendanceCsv = async (req, res, next) => {
           }
         }
 
-        rows.push([
-          escapeCsvField(studentName),
-          escapeCsvField(rollNumber),
-          escapeCsvField(studentId),
-          escapeCsvField(studentClass),
-          escapeCsvField(studentDivision),
-          escapeCsvField(subjectName),
-          escapeCsvField(dateStr),
-          escapeCsvField(timeStr),
-          escapeCsvField(status),
-        ].join(','));
+        rows.push(
+          [
+            escapeCsvField(studentName),
+            escapeCsvField(rollNumber),
+            escapeCsvField(studentId),
+            escapeCsvField(studentClass),
+            escapeCsvField(studentDivision),
+            escapeCsvField(subjectName),
+            escapeCsvField(dateStr),
+            escapeCsvField(timeStr),
+            escapeCsvField(status),
+          ].join(',')
+        );
       });
     });
 
     const csvContent = rows.join('\r\n');
-    const filename = records.length === 1
-      ? `attendance-${records[0].className || 'class'}-${records[0].subject || 'subject'}-${records[0].date || 'date'}.csv`.replace(/[^a-zA-Z0-9._-]/g, '_')
-      : `attendance-report-${Date.now()}.csv`;
+    const filename =
+      records.length === 1
+        ? `attendance-${records[0].className || 'class'}-${records[0].subject || 'subject'}-${records[0].date || 'date'}.csv`.replace(
+            /[^a-zA-Z0-9._-]/g,
+            '_'
+          )
+        : `attendance-report-${Date.now()}.csv`;
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -608,4 +848,6 @@ module.exports = {
   getStudentAttendance,
   getAttendanceStats,
   exportAttendanceCsv,
+  getAssignedSubjects,
+  getAuthorizedSubjectNames,
 };

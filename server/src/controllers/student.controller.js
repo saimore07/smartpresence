@@ -170,6 +170,8 @@ const createStudent = async (req, res, next) => {
       faceImageUrl,
       faceEnrollmentStatus: enrollmentStatus,
       createdBy: req.user._id,
+      creatorModel: req.user.role === 'admin' ? 'Admin' : 'Faculty',
+      isActive: true,
     });
 
     // If biometric template was successfully generated, persist to FaceTemplate collection

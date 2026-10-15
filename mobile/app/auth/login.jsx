@@ -20,7 +20,7 @@ import * as authService from '../../services/authService';
 
 export default function LoginScreen() {
   const { login, studentLogin, updateUser } = useAuth();
-  // Role tab: 'student' | 'faculty'
+  // Role tab: 'student' | 'faculty' | 'admin'
   const [role, setRole] = useState('student');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -72,8 +72,12 @@ export default function LoginScreen() {
           router.replace('/student/dashboard');
         }
       } else {
-        await login(email.trim(), password);
-        router.replace('/faculty/dashboard');
+        const response = await login(email.trim(), password);
+        if (response.user?.role === 'admin' || role === 'admin') {
+          router.replace('/admin/dashboard');
+        } else {
+          router.replace('/faculty/dashboard');
+        }
       }
     } catch (error) {
       const message = error.message || 'Login failed. Please check your credentials.';
@@ -131,6 +135,30 @@ export default function LoginScreen() {
     }
   };
 
+  const getFormTitle = () => {
+    if (role === 'admin') return 'Administrator Sign In';
+    if (role === 'faculty') return 'Faculty Sign In';
+    return 'Student Attendance Portal';
+  };
+
+  const getEmailPlaceholder = () => {
+    if (role === 'admin') return 'e.g. admin@smartpresence.com';
+    if (role === 'faculty') return 'e.g. prof.sharma@college.edu';
+    return 'e.g. rahul.sharma@college.edu';
+  };
+
+  const getPasswordPlaceholder = () => {
+    if (role === 'admin') return 'Enter administrator password';
+    if (role === 'faculty') return 'Enter faculty password';
+    return 'Enter permanent or temporary password';
+  };
+
+  const getSubmitButtonTitle = () => {
+    if (role === 'admin') return 'SIGN IN AS ADMINISTRATOR';
+    if (role === 'faculty') return 'SIGN IN AS FACULTY';
+    return 'SIGN IN AS STUDENT';
+  };
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -178,17 +206,28 @@ export default function LoginScreen() {
                 👨‍🏫 Faculty
               </Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.tabButton, role === 'admin' && styles.tabButtonActive]}
+              onPress={() => {
+                setRole('admin');
+                setErrors({});
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.tabButtonText, role === 'admin' && styles.tabButtonTextActive]}>
+                🛡️ Admin
+              </Text>
+            </TouchableOpacity>
           </View>
 
-          <Text style={styles.formTitle}>
-            {role === 'student' ? 'Student Attendance Portal' : 'Faculty Sign In'}
-          </Text>
+          <Text style={styles.formTitle}>{getFormTitle()}</Text>
 
           <CustomInput
             label="Email Address"
             value={email}
             onChangeText={setEmail}
-            placeholder={role === 'student' ? 'e.g. rahul.sharma@college.edu' : 'e.g. prof.sharma@college.edu'}
+            placeholder={getEmailPlaceholder()}
             keyboardType="email-address"
             autoCapitalize="none"
             error={errors.email}
@@ -198,30 +237,41 @@ export default function LoginScreen() {
             label="Password"
             value={password}
             onChangeText={setPassword}
-            placeholder={role === 'student' ? 'Enter permanent or temporary password' : 'Enter your password'}
+            placeholder={getPasswordPlaceholder()}
             secureTextEntry
             error={errors.password}
           />
 
           <CustomButton
-            title={role === 'student' ? 'SIGN IN AS STUDENT' : 'SIGN IN AS FACULTY'}
+            title={getSubmitButtonTitle()}
             onPress={handleLogin}
             loading={loading}
             style={styles.loginButton}
           />
 
-          {role === 'faculty' ? (
+          {role === 'faculty' && (
             <CustomButton
               title="CREATE FACULTY ACCOUNT"
               onPress={() => router.push('/auth/signup')}
               variant="outline"
               style={styles.signupButton}
             />
-          ) : (
+          )}
+
+          {role === 'admin' && (
+            <View style={styles.adminNoteBox}>
+              <Text style={styles.adminNoteTitle}>🛡️ Centralized Management</Text>
+              <Text style={styles.adminNoteText}>
+                Log in to centrally enroll students, manage faculty accounts, and configure subject allocations.
+              </Text>
+            </View>
+          )}
+
+          {role === 'student' && (
             <View style={styles.studentNoteBox}>
               <Text style={styles.studentNoteTitle}>💡 First Time Logging In?</Text>
               <Text style={styles.studentNoteText}>
-                Use your registered email and the temporary password provided by your faculty during enrollment.
+                Use your registered email and the temporary password provided by your institution during enrollment.
                 You will be required to create your personal password upon signing in.
               </Text>
             </View>
@@ -249,46 +299,52 @@ export default function LoginScreen() {
       >
         <KeyboardAvoidingView
           style={styles.modalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalHeaderIcon}>🔐</Text>
-              <Text style={styles.modalTitle}>Set Your Permanent Password</Text>
+              <Text style={styles.modalTitle}>Set Permanent Password</Text>
               <Text style={styles.modalSubtitle}>
-                Welcome to SmartPresence! For security, your account requires a permanent password before accessing attendance records.
+                This is your first login. For security, please choose a permanent password of at least 6 characters.
               </Text>
             </View>
 
             <CustomInput
-              label="Temporary / Current Password *"
+              label="Temporary Password"
               value={changeForm.oldPassword}
-              onChangeText={(val) => setChangeForm((prev) => ({ ...prev, oldPassword: val }))}
-              placeholder="Enter temporary password"
+              onChangeText={(text) =>
+                setChangeForm((prev) => ({ ...prev, oldPassword: text }))
+              }
+              placeholder="Enter current/temporary password"
               secureTextEntry
               error={changeErrors.oldPassword}
             />
 
             <CustomInput
-              label="New Password * (min 6 characters)"
+              label="New Permanent Password"
               value={changeForm.newPassword}
-              onChangeText={(val) => setChangeForm((prev) => ({ ...prev, newPassword: val }))}
-              placeholder="Enter new permanent password"
+              onChangeText={(text) =>
+                setChangeForm((prev) => ({ ...prev, newPassword: text }))
+              }
+              placeholder="Enter new secure password (min 6 chars)"
               secureTextEntry
               error={changeErrors.newPassword}
             />
 
             <CustomInput
-              label="Confirm New Password *"
+              label="Confirm New Password"
               value={changeForm.confirmPassword}
-              onChangeText={(val) => setChangeForm((prev) => ({ ...prev, confirmPassword: val }))}
-              placeholder="Re-enter new password"
+              onChangeText={(text) =>
+                setChangeForm((prev) => ({ ...prev, confirmPassword: text }))
+              }
+              placeholder="Re-type new password"
               secureTextEntry
               error={changeErrors.confirmPassword}
             />
 
             <CustomButton
-              title="SET PERMANENT PASSWORD & CONTINUE"
+              title="SET PASSWORD & ACCESS DASHBOARD"
               onPress={handleChangePasswordSubmit}
               loading={changingPassword}
               style={styles.modalSubmitBtn}
@@ -306,17 +362,19 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   scrollContent: {
-    flexGrow: 1,
-    justifyContent: 'center',
     padding: 24,
+    paddingTop: 48,
+    paddingBottom: 40,
+    justifyContent: 'center',
+    flexGrow: 1,
   },
   header: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 28,
   },
   logoContainer: {
-    width: 76,
-    height: 76,
+    width: 72,
+    height: 72,
     borderRadius: 20,
     backgroundColor: COLORS.primaryLight,
     justifyContent: 'center',
@@ -363,7 +421,7 @@ const styles = StyleSheet.create({
     ...SHADOWS.small,
   },
   tabButtonText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: COLORS.textSecondary,
   },
@@ -401,6 +459,25 @@ const styles = StyleSheet.create({
   studentNoteText: {
     fontSize: 12,
     color: COLORS.textSecondary,
+    lineHeight: 18,
+  },
+  adminNoteBox: {
+    marginTop: 16,
+    backgroundColor: '#eff6ff',
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+  },
+  adminNoteTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1d4ed8',
+    marginBottom: 4,
+  },
+  adminNoteText: {
+    fontSize: 12,
+    color: '#1e40af',
     lineHeight: 18,
   },
   legacyLookupSection: {

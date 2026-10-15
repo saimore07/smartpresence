@@ -11,12 +11,14 @@ import { useLocalSearchParams, router } from 'expo-router';
 import Loading from '../../components/Loading';
 import CustomButton from '../../components/CustomButton';
 import { COLORS, SHADOWS } from '../../constants/config';
+import { useAuth } from '../../context/AuthContext';
 import { getStudentById, getStudentImageUrl, deleteStudent, deleteFaceTemplate } from '../../services/studentService';
 import { getStudentAttendance } from '../../services/attendanceService';
 import { formatDate } from '../../utils/attendance';
 
 export default function StudentDetailsScreen() {
   const { id } = useLocalSearchParams();
+  const { isAdmin } = useAuth();
   const [student, setStudent] = useState(null);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -158,23 +160,26 @@ export default function StudentDetailsScreen() {
         )}
       </View>
 
-      {/* Biometric Revocation Action */}
-      {isBiometricEnrolled && (
-        <CustomButton
-          title="REVOKE FACE BIOMETRICS"
-          onPress={handleRevokeBiometrics}
-          variant="outline"
-          style={{ marginBottom: 12 }}
-        />
-      )}
+      {/* Administrative Actions (Admin only) */}
+      {isAdmin && (
+        <>
+          {isBiometricEnrolled && (
+            <CustomButton
+              title="REVOKE FACE BIOMETRICS"
+              onPress={handleRevokeBiometrics}
+              variant="outline"
+              style={{ marginBottom: 12 }}
+            />
+          )}
 
-      {/* Actions */}
-      <CustomButton
-        title="DELETE STUDENT"
-        onPress={handleDelete}
-        variant="danger"
-        style={styles.deleteButton}
-      />
+          <CustomButton
+            title="DELETE STUDENT"
+            onPress={handleDelete}
+            variant="danger"
+            style={styles.deleteButton}
+          />
+        </>
+      )}
     </ScrollView>
   );
 }

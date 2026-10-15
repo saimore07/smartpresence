@@ -20,6 +20,7 @@ const TEST_PORT = 5089;
 const TEST_DB_URI = process.env.TEST_MONGODB_URI || 'mongodb://127.0.0.1:27017/smartpresence_test';
 
 let server;
+let adminToken = '';
 let facultyToken = '';
 let facultyUser = null;
 
@@ -83,7 +84,17 @@ const runTests = async () => {
     server = app.listen(TEST_PORT);
     console.log(`✅ Test server running on port ${TEST_PORT}\n`);
 
-    // Setup: Create Faculty account for enrollment and session management
+    // Setup: Admin Authentication
+    console.log('--- SETUP: Admin Authentication ---');
+    const adminLoginRes = await makeRequest('/api/auth/admin/login', 'POST', {
+      email: process.env.ADMIN_EMAIL || 'admin@smartpresence.com',
+      password: process.env.ADMIN_INITIAL_PASSWORD || 'admin@123',
+    });
+    assert(adminLoginRes.status === 200, `Admin login failed: ${JSON.stringify(adminLoginRes.body)}`);
+    adminToken = adminLoginRes.body.token;
+    console.log('Passed: Admin logged in successfully with bootstrap credentials.\n');
+
+    // Setup: Create Faculty account for session management
     console.log('--- SETUP: Faculty Authentication ---');
     const facRes = await makeRequest('/api/auth/faculty/signup', 'POST', {
       name: 'Prof. Alan Turing',
@@ -96,14 +107,19 @@ const runTests = async () => {
     assert(facRes.status === 201, `Faculty signup failed: ${JSON.stringify(facRes.body)}`);
     facultyToken = facRes.body.token;
     facultyUser = facRes.body.user;
-    console.log('Passed: Test Faculty account created.\n');
+
+    // Assign subjects to faculty for attendance testing
+    await Faculty.findByIdAndUpdate(facultyUser._id, {
+      assignedSubjects: ['ENH-Algorithms', 'ENH-Distributed-Systems'],
+    });
+    console.log('Passed: Test Faculty account created and assigned subjects.\n');
 
     // ==========================================
     // FEATURE A TESTS: ENROLLMENT ENHANCEMENTS
     // ==========================================
     console.log('--- FEATURE A: Student Enrollment Enhancements ---');
 
-    // A1. Valid enrollment with first name, last name, and compulsory email
+    // A0. Faculty cannot enroll students (Role enforcement)
     const student1Payload = {
       firstName: 'Ada',
       lastName: 'Lovelace',
@@ -114,7 +130,12 @@ const runTests = async () => {
       className: 'CS-ENH-A',
       year: '3rd Year',
     };
-    const s1Res = await makeRequest('/api/students', 'POST', student1Payload, facultyToken);
+    const facEnrollRes = await makeRequest('/api/students', 'POST', student1Payload, facultyToken);
+    assert(facEnrollRes.status === 403, `Expected 403 for faculty student enrollment, got ${facEnrollRes.status}`);
+    console.log('Passed A0: Faculty token strictly forbidden from enrolling students (403).\n');
+
+    // A1. Valid enrollment with first name, last name, and compulsory email by Admin
+    const s1Res = await makeRequest('/api/students', 'POST', student1Payload, adminToken);
     assert(s1Res.status === 201, `Enrollment failed: ${JSON.stringify(s1Res.body)}`);
     assert(s1Res.body.student.firstName === 'Ada', 'First name mismatch');
     assert(s1Res.body.student.lastName === 'Lovelace', 'Last name mismatch');
@@ -126,14 +147,14 @@ const runTests = async () => {
     assert(s1Res.body.activation.mustChangePassword === true, 'mustChangePassword should be true');
     const student1 = s1Res.body.student;
     const student1TempPass = s1Res.body.activation.temporaryPassword;
-    console.log('Passed A1: Enrollment with firstName, lastName, email, and auto-generated temporary password.\n');
+    console.log('Passed A1: Admin Enrollment with firstName, lastName, email, and auto-generated temporary password.\n');
 
     // A2. Reject missing first name
     const missingFirstRes = await makeRequest(
       '/api/students',
       'POST',
       { ...student1Payload, studentId: 'ENH-STU-002', rollNumber: 'CS-ENH-02', email: 'ada2@enhancement.test', firstName: '' },
-      facultyToken
+      adminToken
     );
     assert(missingFirstRes.status === 400, `Expected 400 for missing firstName, got ${missingFirstRes.status}`);
     console.log('Passed A2: Rejected enrollment with empty first name.\n');
@@ -143,7 +164,7 @@ const runTests = async () => {
       '/api/students',
       'POST',
       { ...student1Payload, studentId: 'ENH-STU-003', rollNumber: 'CS-ENH-03', email: 'ada3@enhancement.test', lastName: '   ' },
-      facultyToken
+      adminToken
     );
     assert(missingLastRes.status === 400, `Expected 400 for whitespace-only lastName, got ${missingLastRes.status}`);
     console.log('Passed A3: Rejected enrollment with whitespace-only last name.\n');
@@ -153,7 +174,7 @@ const runTests = async () => {
       '/api/students',
       'POST',
       { ...student1Payload, studentId: 'ENH-STU-004', rollNumber: 'CS-ENH-04', email: '' },
-      facultyToken
+      adminToken
     );
     assert(missingEmailRes.status === 400, `Expected 400 for missing email, got ${missingEmailRes.status}`);
     console.log('Passed A4: Rejected enrollment with missing compulsory email.\n');
@@ -163,7 +184,7 @@ const runTests = async () => {
       '/api/students',
       'POST',
       { ...student1Payload, studentId: 'ENH-STU-005', rollNumber: 'CS-ENH-05', email: 'invalid-email-no-at' },
-      facultyToken
+      adminToken
     );
     assert(invalidEmailRes.status === 400, `Expected 400 for invalid email, got ${invalidEmailRes.status}`);
     console.log('Passed A5: Rejected enrollment with invalid email format.\n');
@@ -173,7 +194,7 @@ const runTests = async () => {
       '/api/students',
       'POST',
       { ...student1Payload, studentId: 'ENH-STU-006', rollNumber: 'CS-ENH-06', email: 'ADA.LOVELACE@ENHANCEMENT.TEST' },
-      facultyToken
+      adminToken
     );
     assert(dupEmailRes.status === 409, `Expected 409 for duplicate email, got ${dupEmailRes.status}`);
     console.log('Passed A6: Prevented duplicate email enrollment (case-normalized).\n');
@@ -189,7 +210,7 @@ const runTests = async () => {
       className: 'CS-ENH-A',
       year: '3rd Year',
     };
-    const unicodeRes = await makeRequest('/api/students', 'POST', unicodeStudentPayload, facultyToken);
+    const unicodeRes = await makeRequest('/api/students', 'POST', unicodeStudentPayload, adminToken);
     assert(unicodeRes.status === 201, `Failed to enroll unicode student: ${JSON.stringify(unicodeRes.body)}`);
     assert(unicodeRes.body.student.name === 'José-Maria Nuñez', 'Unicode/hyphen name corrupted');
     const student2 = unicodeRes.body.student;
@@ -439,7 +460,7 @@ const runTests = async () => {
       className: 'CS-ENH-EMPTY', // empty class with no sessions
       year: '1st Year',
     };
-    const freshRes = await makeRequest('/api/students', 'POST', freshStudentPayload, facultyToken);
+    const freshRes = await makeRequest('/api/students', 'POST', freshStudentPayload, adminToken);
     assert(freshRes.status === 201, 'Fresh student enrollment failed');
     const freshStudent = freshRes.body.student;
     const freshTempPass = freshRes.body.activation.temporaryPassword;

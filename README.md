@@ -86,7 +86,59 @@ When a student is visible in multiple row photographs (e.g., Row 1 and Row 2), t
 
 ---
 
-## 4. Quick Startup Instructions (Windows PowerShell)
+---
+
+## 4. Role-Based Architecture & Centralized Enrollment
+
+SmartPresence implements a 3-tier Role-Based Access Control (RBAC) architecture:
+
+```
+                            ROLE ARCHITECTURE
+                                    |
+     +------------------------------+------------------------------+
+     |                              |                              |
+   ADMIN                         FACULTY                        STUDENT
+- Centralized Enrollment      - Assigned Subjects Roster     - Personal Attendance Dashboard
+- Faculty Account Management  - AI Multi-Row Attendance     - Subject-wise Percentages
+- Subject Allocations         - Subject-Scoped History       - Historical Session Logs
+- System Statistics           - CSV Session Exports          - Mandatory Password Change
+- Biometric Revocation        (Forbidden from Re-enrolling)   (Read-Only Personal Data)
+```
+
+### Initial Administrator Bootstrap
+The system provisions an initial Admin account via environment variables on server boot or migration:
+- **Email:** `admin@smartpresence.com` (configured via `ADMIN_EMAIL`)
+- **Initial Password:** `admin@123` (configured via `ADMIN_INITIAL_PASSWORD`)
+- **Idempotency:** Password is hashed with `bcryptjs` (salt rounds: 10). If the administrator already exists in MongoDB, the password is never overwritten on server restart.
+
+### Centralized Student Enrollment
+- Canonical student records exist once in MongoDB (`Student` collection) with separate `firstName` and `lastName`, compulsory unique `email`, `studentId`, `rollNumber`, and `className`.
+- Facial biometric templates (`FaceTemplate` collection) are bound to the canonical `studentId`.
+- **Elimination of Duplication:** Faculty members never enroll students. All authorized faculty members teaching a class access the centralized roster without duplicate image capture or template creation.
+
+### Faculty-Specific Subject Scoping
+- The backend determines the authenticated faculty identity directly from the verified JWT (`req.user._id`).
+- When querying attendance history, session details, statistics, or CSV exports, requests are strictly filtered to the faculty member's authorized subjects.
+- Any attempt to query or mark attendance for an unassigned subject is rejected with `403 Forbidden`.
+
+---
+
+## 5. Quick Startup Instructions (Windows PowerShell)
+
+### Database Migration & Idempotent Bootstrap
+Before starting the servers for the first time, run the non-destructive migration script:
+```powershell
+cd c:\Users\mores\Desktop\SmartPresence\server
+npm run migrate
+```
+*What this does safely:*
+1. Backfills assigned subjects for existing faculty from historical records.
+2. Creates canonical subject records with faculty assignments.
+3. Performs non-destructive reconciliation of duplicate student profiles (repointing attendance references and transferring biometric templates).
+4. Drops obsolete single-field indexes and ensures compound unique indexes.
+5. Idempotently provisions the bootstrap Administrator account (`admin@smartpresence.com`).
+
+---
 
 ### Option A: One-Click Launch Script (Recommended)
 You can start the entire stack (MongoDB, Python AI Engine, Node.js Backend, and Expo Bundler) with a single command from the project root:
@@ -104,9 +156,8 @@ To shut down all services at once when done:
 ---
 
 ### Option B: Manual Multi-Terminal Startup
-If you prefer starting each service manually in its own terminal:
 
-### Terminal 1: Local MongoDB
+#### Terminal 1: Local MongoDB
 ```powershell
 # Verify MongoDB service status
 Get-Service -Name *mongo*
@@ -115,32 +166,32 @@ Get-Service -Name *mongo*
 Start-Service MongoDB
 ```
 
-### Terminal 2: Python AI Microservice (`face-service`)
+#### Terminal 2: Python AI Microservice (`face-service`)
 ```powershell
 cd c:\Users\mores\Desktop\SmartPresence\face-service
 
 # Activate virtual environment
 .\venv\Scripts\Activate.ps1
 
-# Run unit tests
-python -m pytest tests
+# Run unit tests (8 tests)
+python -m pytest tests/ -v
 
 # Start FastAPI server on port 8000
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-### Terminal 3: Node.js Express Backend (`server`)
+#### Terminal 3: Node.js Express Backend (`server`)
 ```powershell
 cd c:\Users\mores\Desktop\SmartPresence\server
 
-# Run test suite (22 automated tests)
+# Run backend test suite (e2e tests + feature enhancement tests)
 npm test
 
 # Start Express server on port 5000
 npm run dev
 ```
 
-### Terminal 4: React Native / Expo (`mobile`)
+#### Terminal 4: React Native / Expo (`mobile`)
 ```powershell
 cd c:\Users\mores\Desktop\SmartPresence\mobile
 
@@ -150,7 +201,7 @@ npx expo start
 
 ---
 
-## 5. Development Networking & IP Configuration
+## 6. Development Networking & IP Configuration
 
 - **Backend to MongoDB**: `mongodb://127.0.0.1:27017/smartpresence`
 - **Backend to Python AI Service**: `http://127.0.0.1:8000`
@@ -162,47 +213,83 @@ npx expo start
 
 ---
 
-## 6. API Reference
+## 7. API Reference
 
 ### Health Endpoints
-- `GET http://127.0.0.1:5000/api/health` -> Express health
+- `GET /api/health` -> Express health
 - `GET http://127.0.0.1:8000/health` -> AI service health
 - `GET http://127.0.0.1:8000/ready` -> AI model readiness check
 
-### Student & Biometric Endpoints (Express)
-- `POST /api/students` (multipart with portrait `faceImage`): Enrolls student and creates biometric `FaceTemplate`.
-- `GET /api/students/:id`: Returns student details and active biometric template status.
-- `DELETE /api/students/:id/face-template`: Revokes and deletes facial biometric templates.
+### Authentication Endpoints
+- `POST /api/auth/admin/login` -> Admin login (JWT issued with role `admin`)
+- `POST /api/auth/faculty/login` -> Faculty login (JWT issued with role `faculty`)
+- `POST /api/auth/faculty/signup` -> Faculty registration (when enabled)
+- `POST /api/auth/student/login` -> Student login (JWT issued with role `student`, checks `mustChangePassword`)
+- `POST /api/auth/student/change-password` -> Mandatory student password change
 
-### Attendance Endpoints (Express)
-- `POST /api/attendance/recognize-session` (multipart with `classroomImages` array): Runs multi-row AI recognition and returns structured proposed present, proposed absent, uncertain matches, and unknown detections.
-- `POST /api/attendance`: Finalizes confirmed attendance in MongoDB.
-- `GET /api/attendance`: Attendance session history.
+### Admin Endpoints (Requires `admin` role)
+- `GET /api/admin/stats` -> System counts (students, faculty, subjects, sessions)
+- `GET /api/admin/faculty` -> List all faculty accounts with assigned subjects
+- `POST /api/admin/faculty` -> Register faculty account with assigned subjects
+- `PUT /api/admin/faculty/:id` -> Update faculty details and subject assignments
+- `PATCH /api/admin/faculty/:id/status` -> Toggle faculty active/inactive status
+- `GET /api/admin/subjects` -> List all subjects and assigned faculty
+- `POST /api/admin/subjects` -> Create subject and allocate to faculty members
+- `DELETE /api/admin/subjects/:id` -> Delete subject
+- `PATCH /api/admin/students/:id/status` -> Toggle student active/inactive status
+
+### Student & Biometric Endpoints
+- `POST /api/students` (Admin only, multipart): Centralized student enrollment with portrait photo and AI template creation.
+- `GET /api/students`: List/search students (Admin & Faculty read access).
+- `GET /api/students/:id`: Student details (Admin & Faculty).
+- `PUT /api/students/:id`: Update student identity fields without re-enrollment (Admin only).
+- `DELETE /api/students/:id`: Delete student record (Admin only).
+- `DELETE /api/students/:id/face-template`: Revoke facial template (Admin only).
+- `GET /api/students/attendance/summary`: Student personal attendance summary (Student only).
+- `GET /api/students/attendance/history`: Student personal session logs with pagination (Student only).
+
+### Attendance Endpoints
+- `GET /api/attendance/subjects`: Returns authorized subjects for authenticated faculty.
+- `POST /api/attendance/recognize-session`: Multi-row facial recognition (Faculty only, authorized subjects only).
+- `POST /api/attendance`: Finalize attendance session (Faculty only, enforces `facultyId = req.user._id`).
+- `GET /api/attendance`: Session history strictly scoped to faculty assigned subjects.
+- `GET /api/attendance/:id`: Session detail (strictly verified against faculty subjects).
+- `GET /api/attendance/stats`: Attendance statistics scoped to faculty subjects.
+- `GET /api/attendance/:id/export-csv`: CSV export for authorized sessions.
 
 ---
 
-## 7. Step-by-Step Manual Test Plan
+## 8. Verification & Test Plan
 
-1. **Verify Services**:
-   - Run `curl http://127.0.0.1:8000/health` -> should return `{"status":"healthy"}`.
-   - Run `curl http://127.0.0.1:8000/ready` -> should return `{"ready":true}`.
-   - Run `curl http://localhost:5000/api/health` -> should return `{"success":true}`.
-2. **Faculty Login / Signup**:
-   - Open mobile app -> Sign up or log in with faculty credentials.
-3. **Enroll Students**:
-   - Tap "Enroll Student" -> Enter name, roll number, class (e.g. `CS-A`).
-   - Tap camera icon -> Capture a front portrait photo -> Submit.
-   - Verify student appears in Students list with "✓ Template Enrolled".
-4. **Take Multi-Row Attendance**:
-   - Tap "Take Attendance" -> Select Class `CS-A`, Subject, Date.
-   - Tap "Start Session & Open Camera".
-   - Snap Row 1 photo -> Preview row.
-   - Tap "Capture Next Row" -> Snap Row 2 photo.
-   - Tap "⚡ Process 2 Row Photos with AI".
-5. **Review & Confirm Roster**:
-   - Inspect Attendance Review screen:
-     - Enrolled matching students are marked "Present" with a green `✓ AI Match` pill.
-     - Enrolled non-present students are listed as "Absent".
-     - Tap any student card to manually toggle their status.
-   - Tap "CONFIRM ATTENDANCE".
-   - Verify attendance appears in "Attendance History" and MongoDB.
+1. **Backend Automated Tests**:
+   ```bash
+   cd server
+   npm test
+   ```
+   *Executes both `test/e2e.test.js` and `test/features_enhancement.test.js` covering Admin bootstrap, student centralized enrollment, duplicate email rejection, role authorization barriers, 12-hour session time validation, zero-session handling, and faculty-scoped history.*
+
+2. **Face Service AI Tests**:
+   ```bash
+   cd face-service
+   .\venv\Scripts\python.exe -m pytest tests/ -v
+   ```
+   *Validates YuNet detector, SFace feature extractor, cosine similarity math, and synthetic match outcomes.*
+
+3. **Admin Workflow in Mobile App**:
+   - Open mobile app -> Select **Admin** tab.
+   - Enter `admin@smartpresence.com` / `admin@123`.
+   - Access **Admin Dashboard**:
+     - View system stats (Students, Faculty, Subjects, Attendance Sessions).
+     - Tap **Centralized Student Enrollment** -> Enter First Name, Last Name, Email, Roll Number, Class -> Capture portrait -> Submit.
+     - Tap **Faculty Management** -> Add faculty, assign subjects, or toggle active status.
+     - Tap **Subject Allocation** -> Add subject code and name, check assigned faculty.
+     - Tap **Student Directory** -> Search students, view details, edit details without re-enrollment.
+
+4. **Faculty Workflow in Mobile App**:
+   - Log out -> Select **Faculty** tab -> Log in as faculty.
+   - Access **Faculty Dashboard**:
+     - Notice assigned subject chips at the top.
+     - Observe absence of student enrollment button (preventing duplicate enrollments).
+     - Tap **Take Attendance** -> Select one of the assigned subjects, date, and 12-hour AM/PM time slot.
+     - Capture row photos -> Run AI face recognition -> Confirm attendance.
+     - Tap **Attendance History** -> Verify history lists only sessions for assigned subjects.

@@ -78,8 +78,17 @@ const studentSchema = new mongoose.Schema({
   },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Faculty',
+    refPath: 'creatorModel',
     required: true,
+  },
+  creatorModel: {
+    type: String,
+    enum: ['Faculty', 'Admin'],
+    default: 'Faculty',
+  },
+  isActive: {
+    type: Boolean,
+    default: true,
   },
   createdAt: {
     type: Date,

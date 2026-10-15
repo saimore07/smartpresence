@@ -49,12 +49,13 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const loginFaculty = async (email, password) => {
+  const loginUser = async (email, password) => {
     const response = await authService.login(email, password);
     if (response.success) {
       await AsyncStorage.setItem(TOKEN_KEY, response.token);
       setToken(response.token);
-      setUser({ ...response.user, role: 'faculty' });
+      const userRole = response.user.role || (response.user.email?.includes('admin') ? 'admin' : 'faculty');
+      setUser({ ...response.user, role: userRole });
     }
     return response;
   };
@@ -100,9 +101,10 @@ export const AuthProvider = ({ children }) => {
     token,
     loading,
     isAuthenticated: !!user && !!token,
+    isAdmin: user?.role === 'admin',
     isFaculty: user?.role === 'faculty',
     isStudent: user?.role === 'student',
-    login: loginFaculty,
+    login: loginUser,
     studentLogin: loginStudent,
     signup: signupUser,
     updateUser: updateUserSession,

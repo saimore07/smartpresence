@@ -35,7 +35,6 @@ export default function DashboardScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      // Re-fetch in background without unmounting dashboard tree
       loadStats(false);
     }, [])
   );
@@ -59,34 +58,32 @@ export default function DashboardScreen() {
     loadStats();
   };
 
+  const assignedSubjects =
+    (stats?.assignedSubjects && stats.assignedSubjects.length > 0)
+      ? stats.assignedSubjects
+      : (user?.assignedSubjects || []);
+
   const menuItems = [
-    {
-      icon: '👤',
-      title: 'Enroll Student',
-      subtitle: 'Add a new student to the system',
-      route: '/faculty/enroll-student',
-      color: '#4285f4',
-    },
-    {
-      icon: '👥',
-      title: 'Students',
-      subtitle: 'View and manage enrolled students',
-      route: '/faculty/students',
-      color: '#34a853',
-    },
     {
       icon: '📸',
       title: 'Take Attendance',
-      subtitle: 'Start an attendance session',
+      subtitle: 'Start session with AI facial recognition',
       route: '/faculty/take-attendance',
       color: '#fbbc04',
     },
     {
       icon: '📊',
       title: 'Attendance History',
-      subtitle: 'View past attendance records',
+      subtitle: 'View past sessions for your assigned subjects',
       route: '/faculty/attendance-history',
       color: '#ea4335',
+    },
+    {
+      icon: '👥',
+      title: 'Class Roster & Students',
+      subtitle: 'View centrally enrolled student profiles',
+      route: '/faculty/students',
+      color: '#34a853',
     },
   ];
 
@@ -98,19 +95,38 @@ export default function DashboardScreen() {
           <View>
             <Text style={styles.greeting}>Welcome back,</Text>
             <Text style={styles.userName}>{user?.name || 'Faculty'}</Text>
+            <Text style={styles.departmentText}>{user?.department || 'Faculty Member'}</Text>
           </View>
           <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
             <Text style={styles.logoutText}>Logout</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Stats Cards */}
+        {/* Assigned Subjects Banner */}
+        <View style={styles.subjectsBanner}>
+          <Text style={styles.subjectsBannerTitle}>📚 Your Assigned Subjects:</Text>
+          {assignedSubjects.length > 0 ? (
+            <View style={styles.subjectChipsRow}>
+              {assignedSubjects.map((sub, i) => (
+                <View key={i} style={styles.subjectBadge}>
+                  <Text style={styles.subjectBadgeText}>{sub}</Text>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <Text style={styles.noSubjectsWarning}>
+              No subjects assigned yet. Please contact the Administrator.
+            </Text>
+          )}
+        </View>
+
+        {/* Stats Cards Scoped to Faculty Subjects */}
         <View style={styles.statsRow}>
           <View style={[styles.statCard, { backgroundColor: '#e8f0fe' }]}>
             <Text style={[styles.statNumber, { color: '#1a73e8' }]}>
               {stats?.totalStudents ?? 0}
             </Text>
-            <Text style={styles.statLabel}>Total Students</Text>
+            <Text style={styles.statLabel}>Roster Students</Text>
           </View>
 
           <View style={[styles.statCard, { backgroundColor: '#e6f4ea' }]}>
@@ -130,7 +146,7 @@ export default function DashboardScreen() {
 
         {stats && stats.todaySessions === 0 && (
           <Text style={styles.noAttendanceNote}>
-            No attendance recorded today.
+            No attendance recorded today for your subjects.
           </Text>
         )}
       </View>
@@ -143,6 +159,8 @@ export default function DashboardScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />
         }
       >
+        <Text style={styles.sectionTitle}>Lecture & Roster Actions</Text>
+
         {menuItems.map((item, index) => (
           <TouchableOpacity
             key={index}
@@ -160,6 +178,17 @@ export default function DashboardScreen() {
             <Text style={styles.menuArrow}>›</Text>
           </TouchableOpacity>
         ))}
+
+        {/* Centralized Enrollment Notice */}
+        <View style={styles.noticeBox}>
+          <Text style={styles.noticeIcon}>ℹ️</Text>
+          <View style={styles.noticeTextWrapper}>
+            <Text style={styles.noticeTitle}>Centralized Student Records</Text>
+            <Text style={styles.noticeBody}>
+              Students are centrally registered and managed by the Administrator. You can mark attendance directly without enrolling students separately.
+            </Text>
+          </View>
+        </View>
       </ScrollView>
     </View>
   );
@@ -182,29 +211,69 @@ const styles = StyleSheet.create({
   headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
+    alignItems: 'flex-start',
+    marginBottom: 14,
   },
   greeting: {
-    fontSize: 14,
+    fontSize: 13,
     color: COLORS.textSecondary,
   },
   userName: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '700',
     color: COLORS.text,
     marginTop: 2,
   },
+  departmentText: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginTop: 1,
+  },
   logoutBtn: {
     backgroundColor: COLORS.errorLight,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     borderRadius: 20,
   },
   logoutText: {
     color: COLORS.error,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
+  },
+  subjectsBanner: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  subjectsBannerTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.text,
+    marginBottom: 6,
+  },
+  subjectChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  subjectBadge: {
+    backgroundColor: COLORS.primaryLight,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  subjectBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.primary,
+  },
+  noSubjectsWarning: {
+    fontSize: 11,
+    color: '#dc2626',
+    fontStyle: 'italic',
   },
   statsRow: {
     flexDirection: 'row',
@@ -213,26 +282,33 @@ const styles = StyleSheet.create({
   statCard: {
     flex: 1,
     borderRadius: 14,
-    padding: 14,
+    padding: 12,
     alignItems: 'center',
   },
   statNumber: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '700',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   statLabel: {
     fontSize: 11,
     color: COLORS.textSecondary,
     textAlign: 'center',
-    fontWeight: '500',
+    fontWeight: '600',
   },
   noAttendanceNote: {
     textAlign: 'center',
     color: COLORS.textSecondary,
-    fontSize: 13,
-    marginTop: 12,
+    fontSize: 12,
+    marginTop: 10,
     fontStyle: 'italic',
+  },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.text,
+    marginBottom: 12,
+    marginLeft: 4,
   },
   menuContainer: {
     flex: 1,
@@ -265,18 +341,46 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   menuTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     color: COLORS.text,
     marginBottom: 2,
   },
   menuSubtitle: {
-    fontSize: 13,
+    fontSize: 12,
     color: COLORS.textSecondary,
   },
   menuArrow: {
     fontSize: 24,
     color: COLORS.textLight,
     paddingLeft: 8,
+  },
+  noticeBox: {
+    flexDirection: 'row',
+    backgroundColor: '#eff6ff',
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+  },
+  noticeIcon: {
+    fontSize: 20,
+    marginRight: 10,
+    marginTop: 2,
+  },
+  noticeTextWrapper: {
+    flex: 1,
+  },
+  noticeTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1d4ed8',
+    marginBottom: 3,
+  },
+  noticeBody: {
+    fontSize: 11,
+    color: '#1e40af',
+    lineHeight: 16,
   },
 });

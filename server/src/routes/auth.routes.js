@@ -3,15 +3,21 @@ const router = express.Router();
 const {
   facultySignup,
   login,
+  adminLogin,
+  changePassword,
   studentLogin,
   studentChangePassword,
   getMe,
 } = require('../controllers/auth.controller');
 const { authMiddleware, requireStudent } = require('../middleware/auth.middleware');
 
-// Faculty authentication
-router.post('/faculty/signup', facultySignup);
+// Universal and Role-Specific Login Endpoints
 router.post('/login', login);
+router.post('/admin/login', adminLogin);
+router.post('/faculty/signup', facultySignup);
+
+// Authenticated Password Change
+router.post('/change-password', authMiddleware, changePassword);
 
 // Student authentication
 router.post('/student/login', studentLogin);

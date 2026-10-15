@@ -1,5 +1,6 @@
 const Faculty = require('../models/Faculty');
 const Student = require('../models/Student');
+const Admin = require('../models/Admin');
 const bcrypt = require('bcryptjs');
 const { generateToken } = require('../utils/jwt');
 const { validateEmail, validateRequired } = require('../utils/validation');
@@ -82,7 +83,7 @@ const facultySignup = async (req, res, next) => {
   }
 };
 
-// POST /api/auth/login (Faculty Login)
+// POST /api/auth/login (Universal/Faculty/Admin Login)
 const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
@@ -103,8 +104,35 @@ const login = async (req, res, next) => {
       });
     }
 
-    // Find faculty
-    const faculty = await Faculty.findOne({ email: email.toLowerCase() });
+    const cleanEmail = email.toLowerCase().trim();
+
+    // 1. Check if it's an Administrator
+    const admin = await Admin.findOne({ email: cleanEmail });
+    if (admin) {
+      const isMatch = await admin.comparePassword(password);
+      if (!isMatch) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid email or password.',
+        });
+      }
+      if (admin.isActive === false) {
+        return res.status(403).json({
+          success: false,
+          message: 'Administrator account has been deactivated.',
+        });
+      }
+      const token = generateToken({ id: admin._id, role: 'admin' });
+      return res.status(200).json({
+        success: true,
+        message: 'Admin login successful.',
+        token,
+        user: admin,
+      });
+    }
+
+    // 2. Check if it's a Faculty member
+    const faculty = await Faculty.findOne({ email: cleanEmail });
     if (!faculty) {
       return res.status(401).json({
         success: false,
@@ -121,13 +149,139 @@ const login = async (req, res, next) => {
       });
     }
 
-    const token = generateToken({ id: faculty._id, role: faculty.role });
+    if (faculty.isActive === false) {
+      return res.status(403).json({
+        success: false,
+        message: 'Faculty account has been deactivated. Please contact an administrator.',
+      });
+    }
+
+    const token = generateToken({ id: faculty._id, role: faculty.role || 'faculty' });
 
     res.status(200).json({
       success: true,
       message: 'Login successful.',
       token,
       user: faculty,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// POST /api/auth/admin/login (Dedicated Admin Login)
+const adminLogin = async (req, res, next) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email and password are required.',
+      });
+    }
+
+    if (!validateEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please enter a valid email address.',
+      });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    const admin = await Admin.findOne({ email: cleanEmail });
+    if (!admin) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password.',
+      });
+    }
+
+    const isMatch = await admin.comparePassword(password);
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password.',
+      });
+    }
+
+    if (admin.isActive === false) {
+      return res.status(403).json({
+        success: false,
+        message: 'Administrator account has been deactivated.',
+      });
+    }
+
+    const token = generateToken({ id: admin._id, role: 'admin' });
+
+    res.status(200).json({
+      success: true,
+      message: 'Administrator login successful.',
+      token,
+      user: admin,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// POST /api/auth/change-password (Authenticated Admin / Faculty Password Change)
+const changePassword = async (req, res, next) => {
+  try {
+    const { oldPassword, newPassword, confirmPassword } = req.body;
+
+    if (!oldPassword || !newPassword || !confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Current password, new password, and confirmation are required.',
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password must be at least 6 characters long.',
+      });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'New passwords do not match.',
+      });
+    }
+
+    if (oldPassword === newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password cannot be the same as your current password.',
+      });
+    }
+
+    const Model = req.user.role === 'admin' ? Admin : Faculty;
+    const account = await Model.findById(req.user._id);
+
+    if (!account) {
+      return res.status(404).json({
+        success: false,
+        message: 'User account not found.',
+      });
+    }
+
+    const isMatch = await account.comparePassword(oldPassword);
+    if (!isMatch) {
+      return res.status(400).json({
+        success: false,
+        message: 'Current password is incorrect.',
+      });
+    }
+
+    account.passwordHash = newPassword;
+    await account.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Password changed successfully.',
     });
   } catch (error) {
     next(error);
@@ -290,4 +444,12 @@ const getMe = async (req, res, next) => {
   }
 };
 
-module.exports = { facultySignup, login, studentLogin, studentChangePassword, getMe };
+module.exports = {
+  facultySignup,
+  login,
+  adminLogin,
+  changePassword,
+  studentLogin,
+  studentChangePassword,
+  getMe,
+};
